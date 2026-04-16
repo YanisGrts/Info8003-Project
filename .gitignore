@@ -22,3 +22,5 @@ runs/
 
 # Claude
 .claude/
+
+*.log

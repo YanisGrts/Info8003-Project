@@ -13,9 +13,6 @@ runs/
 *.json
 !requirements.txt
 
-# Models
-*.zip
-
 # IDE
 .vscode/
 .idea/

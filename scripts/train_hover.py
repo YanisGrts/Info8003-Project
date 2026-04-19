@@ -1,4 +1,5 @@
 import gymnasium
+import numpy as np
 import PyFlyt.gym_envs
 import wandb
 from wandb.integration.sb3 import WandbCallback
@@ -9,18 +10,27 @@ from stable_baselines3.common.env_util import make_vec_env
 import os
 import argparse
 import torch
+from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import VecNormalize
+
 
 def ppo(flight_mode, run):
-    # env = gymnasium.make("PyFlyt/QuadX-Hover-v4", flight_mode=0)
+    if torch.cuda.is_available():
+        device = "cuda"
+    else:
+        device = "cpu"
+
+    # Use 8 environments (or more, depending on your CPU)
     env = make_vec_env(
         "PyFlyt/QuadX-Hover-v4",
-        n_envs=8,
+        n_envs=8, 
         env_kwargs={"flight_mode": flight_mode},
-        vec_env_cls=SubprocVecEnv,
+        vec_env_cls=SubprocVecEnv,  # Use multiprocessing for high FPS
     )
-    env = VecMonitor(env) # Necessary for Wandb to track episode rewards
 
-    assert torch.cuda.is_available(), "CUDA not available!"
+    env = VecMonitor(env)
+    # KEEP VecNormalize! This is why your brown run succeeded.
+    env = VecNormalize(env, norm_obs=True, norm_reward=True)
 
     model = PPO(
         "MlpPolicy",
@@ -28,20 +38,36 @@ def ppo(flight_mode, run):
         verbose=0,
         tensorboard_log=f"runs/{run.id}",
         learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=256,
-        ent_coef=0.01,   # add this — helps exploration early on
-        device="cuda",
+        n_steps=1024,
+        batch_size=128,
+        ent_coef=0.01,
+        gae_lambda=0.95,
+        clip_range=0.2,
+        policy_kwargs=dict(net_arch=[256, 256]),
+        device=device,
     )
-    print(f"Using device: {model.device}")
 
+    print(f"Using device: {model.device}")
     return model
 
-def sac(flight_mode, run):
-    env = gymnasium.make("PyFlyt/QuadX-Hover-v4", flight_mode=flight_mode)
-    env = Monitor(env)
 
-    assert torch.cuda.is_available(), "CUDA not available!"
+
+def sac(flight_mode, run):
+    env = make_vec_env(
+        "PyFlyt/QuadX-Hover-v4",
+        n_envs=8, 
+        env_kwargs={"flight_mode": flight_mode},
+        vec_env_cls=DummyVecEnv,
+    )
+    env = VecMonitor(env)
+    env = VecNormalize(env, norm_obs=True, norm_reward=True)
+
+    if torch.cuda.is_available():
+        device = "cuda"
+    # elif torch.backends.mps.is_available():
+    #     device = "mps" 
+    else:
+        device = "cpu"
 
     model = SAC(
         "MlpPolicy",
@@ -49,17 +75,44 @@ def sac(flight_mode, run):
         verbose=0,
         tensorboard_log=f"runs/{run.id}",
         learning_rate=3e-4,
-        buffer_size=300_000,
-        learning_starts=10_000,  # collect random experience before updating
+        buffer_size=500_000,  
+        learning_starts=10_000,  
         batch_size=256,
         tau=0.005,
         gamma=0.99,
-        ent_coef="auto",         # SAC auto-tunes entropy for exploration
-        device="cuda",
+        ent_coef="auto",         
+        device=device,
     )
     print(f"Using device: {model.device}")
 
     return model
+
+# def sac(flight_mode, run):
+#     env = gymnasium.make("PyFlyt/QuadX-Hover-v4", flight_mode=flight_mode)
+#     env = Monitor(env)
+
+#     if torch.cuda.is_available():
+#         device = "cuda"
+#     else:
+#         device = "cpu"
+
+#     model = SAC(
+#         "MlpPolicy",
+#         env,
+#         verbose=0,
+#         tensorboard_log=f"runs/{run.id}",
+#         learning_rate=3e-4,
+#         buffer_size=300_000,
+#         learning_starts=10_000,  # collect random experience before updating
+#         batch_size=256,
+#         tau=0.005,
+#         gamma=0.99,
+#         ent_coef="auto",         # SAC auto-tunes entropy for exploration
+#         device=device,
+#     )
+#     print(f"Using device: {model.device}")
+
+#     return model
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="RL-Drone-Project")
@@ -96,9 +149,9 @@ if __name__ == "__main__":
         total_timesteps=args.steps,
         callback=WandbCallback(
             model_save_path=f"models/{run.id}", # need to have a 'models' folder
-            verbose=0,
+            verbose=1,
         ),
     )
-
+    
     model.save(f"models/{NAME}")
     run.finish()

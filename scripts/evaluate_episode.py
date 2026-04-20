@@ -1,3 +1,5 @@
+import argparse
+
 import gymnasium
 import numpy as np
 import matplotlib.pyplot as plt
@@ -96,9 +98,15 @@ def analyze_episode(model_path, algo="ppo", flight_mode=6):
     print("Analysis complete. Saved plot to episode_analysis.png")
 
 if __name__ == "__main__":
+    import argparse 
     # Change these to match your saved model
-    MODEL_PATH = "models/waypoints-mode6-ppo.zip"  
-    ALGO = "ppo"
-    FLIGHT_MODE = 6
-    
+    parser = argparse.ArgumentParser(description="Evaluate trained RL agents")
+    parser.add_argument("--model", type=str, required=True, help="Path to saved model")
+    parser.add_argument("--algo", type=str, default="ppo", choices=["ppo", "sac"], help="RL algorithm used for training")
+    parser.add_argument("--flight_mode", type=int, default=6, choices=[-1,0,4,6,7])
+    args = parser.parse_args()
+    MODEL_PATH = args.model
+    ALGO = args.algo
+    FLIGHT_MODE = args.flight_mode
+
     analyze_episode(MODEL_PATH, ALGO, FLIGHT_MODE)

@@ -37,14 +37,15 @@ def ppo(flight_mode, run):
         env,
         verbose=0,
         tensorboard_log=f"runs/{run.id}",
-        learning_rate=3e-4,
+        learning_rate=1e-4,
         n_steps=1024,
         batch_size=128,
         ent_coef=0.01,
         gae_lambda=0.95,
-        clip_range=0.2,
+        clip_range=0.1,
         policy_kwargs=dict(net_arch=[256, 256]),
         device=device,
+        n_epochs=5,
     )
 
     print(f"Using device: {model.device}")

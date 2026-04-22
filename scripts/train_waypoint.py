@@ -19,67 +19,110 @@ import numpy as np
 
 import gymnasium as gym
 import numpy as np
+    
 
 class WaypointRewardShaping(gym.Wrapper):
-    """Custom wrapper to shape the reward for the Waypoints environment."""
-    
-    def __init__(self, env):
+    def __init__(self, env, gamma=0.95):
         super().__init__(env)
-        self.previous_distance = None
-        
+        self.gamma = gamma
+        self.previous_distance = 0.0
+
+
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        
-        # Initialize the previous distance at the start of the episode
+        self.previous_distance = self._get_distance(obs)
+        return obs, info
+
+    def _get_distance(self, obs):
         if isinstance(obs, dict) and "target_deltas" in obs:
             targets = obs["target_deltas"]
             if len(targets) > 0:
-                self.previous_distance = np.linalg.norm(targets[0])
-            else:
-                self.previous_distance = 0.0
-                
-        return obs, info
+                return float(np.linalg.norm(targets[0]))
+        return 0.0
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
-        shaped_reward = reward * 10
+        current_distance = self._get_distance(obs)
 
-        # Inciter à aller vite 
-        shaped_reward -= 0.01
+        # Potential-based shaping
+        shaping = self.gamma * (-current_distance) - (-self.previous_distance)
+        self.previous_distance = current_distance
         
-        #  Limiter les gros changements d'action
-        action_penalty = -0.001 * np.sum(np.square(action)) 
-        shaped_reward += action_penalty
-        
-        #Récompenser le fait de se rapprocher
-        if isinstance(obs, dict) and "target_deltas" in obs:
-            targets = obs["target_deltas"]
-            if len(targets) > 0:
-                current_distance = np.linalg.norm(targets[0])
-                
-                if self.previous_distance is not None:
-                    progress = self.previous_distance - current_distance
-                    distance_reward = 100.0 * progress 
-                    shaped_reward += distance_reward
-                
-                self.previous_distance = current_distance
-                
-        return obs, shaped_reward, terminated, truncated, info
+        # Explicit capture bonus — fires when inside goal radius
+        # goal_reach_distance in your env_config is 4.0
+        if current_distance < 4.0:
+            shaping += 50.0
 
+        return obs, reward + shaping, terminated, truncated, info
+    # def step(self, action):
+    #     obs, reward, terminated, truncated, info = self.env.step(action)
+        
+    #     # 1. Base reward (Keep the crash penalty)
+    #     shaped_reward = reward 
+
+    #     # 2. BRUTAL Time Penalty
+    #     # -0.1 was too soft. -0.5 makes hovering intolerable.
+    #     shaped_reward -= 0.2
+
+    #     if self.previous_action is not None:
+    #         action_diff = np.linalg.norm(action - self.previous_action)
+    #         shaped_reward -= 0.1 * action_diff # Penalize jerky movements
+        
+    #     self.previous_action = np.array(action)
+    #     if isinstance(obs, dict) and "target_deltas" in obs:
+    #         targets = obs["target_deltas"]
+    #         if len(targets) > 0:
+    #             current_distance = np.linalg.norm(targets[0])
+
+    #             if self.previous_distance is not None:
+    #                 # 3. MASSIVE Progress Reward
+    #                 # We need to "pull" the agent out of its hover state.
+    #                 progress = self.previous_distance - current_distance
+    #                 shaped_reward += 2.0 * progress  # Increased from 2.0 to 10.0
+
+    #             # 4. Stronger Magnet Bonus
+    #             shaped_reward += 1.0 * np.exp(-0.1 * current_distance)
+    #             self.previous_distance = current_distance
+
+    #     return obs, shaped_reward, terminated, truncated, info
+    # def step(self, action):
+    #     obs, reward, terminated, truncated, info = self.env.step(action)
+    #     shaped_reward = reward 
+
+    #     # 1. BRUTAL Time Penalty
+    #     # -0.2 was not enough to scare it. -0.5 makes the agent "panic."
+    #     shaped_reward -= 0.5 
+
+    #     if isinstance(obs, dict) and "target_deltas" in obs:
+    #         targets = obs["target_deltas"]
+    #         if len(targets) > 0:
+    #             current_distance = np.linalg.norm(targets[0])
+
+    #             if self.previous_distance is not None:
+    #                 # 2. MASSIVE Progress Reward
+    #                 # We are increasing this to 20.0. 
+    #                 # This means moving 1 meter closer is 40x better than staying still.
+    #                 progress = self.previous_distance - current_distance
+    #                 shaped_reward += 20.0 * progress 
+
+    #             # 3. The "Capture" Bonus
+    #             # Only give this when the agent is actually "touching" the target.
+    #             if current_distance < 4.0:
+    #                 shaped_reward += 10.0  # Huge bonus for being inside the target zone
+
+    #             self.previous_distance = current_distance
+
+    #     return obs, shaped_reward, terminated, truncated, info
 def make_custom_env(env_id, env_kwargs, rank, seed=0):
     """Utility function to chain multiple wrappers for a multiprocessed env."""
     def _init():
-        # 1. Create the base environment
+        # BAse
         env = gymnasium.make(env_id, **env_kwargs)
         
-        # 2. Add your custom reward shaping FIRST 
-        # (It needs to be first so it can read the 'target_deltas' dictionary before it gets flattened)
+        # Custom Reward
         env = WaypointRewardShaping(env) 
         
-        # 3. Flatten the observation LAST
-        # (Must be last so the PPO/SAC algorithms receive the 1D vector they expect)
         env = FlattenWaypointEnv(env, max_waypoints=4)
-        
         env.reset(seed=seed + rank)
         return env
     return _init
@@ -106,18 +149,18 @@ def ppo(flight_mode, run):
         env,
         verbose=0,
         tensorboard_log=f"runs/{run.id}",
-        learning_rate=5e-5,
+        learning_rate=3e-4,
         n_steps=2048,
-        batch_size=256,
-        ent_coef=0.05,
+        batch_size=512,
+        ent_coef=0.00, #0.01,
         gae_lambda=0.95,
-        clip_range=0.15,
-        policy_kwargs=dict(net_arch=[512, 512, 256]),
+        clip_range=0.2,
+        policy_kwargs=dict(net_arch=[256, 256]),
         device=device,
     )
 
     print(f"Using device: {model.device}")
-    return model
+    return model, env
 
 
 def sac(flight_mode, run):
@@ -153,7 +196,7 @@ def sac(flight_mode, run):
     )
     print(f"Using device: {model.device}")
 
-    return model
+    return model, env
 
 
 if __name__ == "__main__":
@@ -182,9 +225,9 @@ if __name__ == "__main__":
     )
 
     if args.algo == "ppo":
-        model = ppo(args.flight_mode, run)
+        model, env = ppo(args.flight_mode, run)
     elif args.algo == "sac":
-        model = sac(args.flight_mode, run)
+        model, env = sac(args.flight_mode, run)
     else: 
         raise ValueError("Unknown algo!")
 
@@ -201,4 +244,5 @@ if __name__ == "__main__":
     )
     
     model.save(f"models/{NAME}")
+    env.save(f"models/{NAME}_vecnormalize.pkl")
     run.finish()

@@ -38,3 +38,8 @@ Copy `scripts/submission_template.py` to `groupXX_name.py` and implement `load_m
 Your model must expose: `model.predict(obs, deterministic=True) -> (action, info)`.
 
 See the project statement for full details.
+
+
+## WAYPOINT ENVIRONMENT:
+
+J'utilise VecNormalize dans l'environment pour normaliser les rewards et observations car c'est sensé être meilleur. Du coup quand on évalue le modele, il faut aller chopper la normalisation qui a été déterminéee pendant le training. Pour faire ça on exporte un fichier pkl qu'on doit import dans l'evaluation (evaluate_norm et evaluate_episode). <

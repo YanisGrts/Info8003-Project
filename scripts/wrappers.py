@@ -1,5 +1,3 @@
-"""Custom Gymnasium wrappers for PyFlyt environments."""
-
 import gymnasium
 import numpy as np
 from gymnasium import spaces
@@ -38,3 +36,4 @@ class FlattenWaypointEnv(gymnasium.ObservationWrapper):
         padded[:n] = targets[:n]
 
         return np.concatenate([attitude, padded.flatten()])
+ 

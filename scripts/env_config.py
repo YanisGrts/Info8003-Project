@@ -14,6 +14,15 @@ WAYPOINT_ENV_KWARGS = dict(
     num_targets=4,
 )
 
+# Easier environment for debugging.
+# WAYPOINT_ENV_KWARGS = dict(
+#     goal_reach_distance=10.0,
+#     flight_dome_size=50.0,
+#     num_targets=1,
+#     max_duration_seconds=60.0,
+# )
+
+
 
 def get_env_kwargs(env_name):
     """Return extra gymnasium.make() kwargs for the given environment.

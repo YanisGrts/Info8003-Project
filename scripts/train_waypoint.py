@@ -1,4 +1,4 @@
-import gymnasium
+import gymnasium as gym
 import numpy as np
 import PyFlyt.gym_envs
 import wandb
@@ -6,6 +6,7 @@ from wandb.integration.sb3 import WandbCallback
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.vec_env import VecMonitor, SubprocVecEnv, DummyVecEnv, VecNormalize
 from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 import os
 import argparse
 import torch
@@ -13,12 +14,6 @@ import torch
 # Import custom configurations and wrappers for Waypoints
 from env_config import get_env_kwargs
 from wrappers import FlattenWaypointEnv
-
-import gymnasium as gym
-import numpy as np
-
-import gymnasium as gym
-import numpy as np
     
 
 class WaypointRewardShaping(gym.Wrapper):
@@ -27,9 +22,9 @@ class WaypointRewardShaping(gym.Wrapper):
         self.gamma = gamma
         self.previous_distance = 0.0
 
-
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
+        self._last_waypoints = 0
         self.previous_distance = self._get_distance(obs)
         return obs, info
 
@@ -47,11 +42,11 @@ class WaypointRewardShaping(gym.Wrapper):
         # Potential-based shaping
         shaping = self.gamma * (-current_distance) - (-self.previous_distance)
         self.previous_distance = current_distance
-        
-        # Explicit capture bonus — fires when inside goal radius
-        # goal_reach_distance in your env_config is 4.0
-        if current_distance < 4.0:
-            shaping += 50.0
+
+        # Capture bonus on actual waypoint capture
+        if info.get("num_targets_reached", 0) > self._last_waypoints:
+            shaping += 5.0
+        self._last_waypoints = info.get("num_targets_reached", 0)
 
         return obs, reward + shaping, terminated, truncated, info
     # def step(self, action):
@@ -117,7 +112,7 @@ def make_custom_env(env_id, env_kwargs, rank, seed=0):
     """Utility function to chain multiple wrappers for a multiprocessed env."""
     def _init():
         # BAse
-        env = gymnasium.make(env_id, **env_kwargs)
+        env = gym.make(env_id, **env_kwargs)
         
         # Custom Reward
         env = WaypointRewardShaping(env) 
@@ -165,6 +160,7 @@ def ppo(flight_mode, run):
 
 def sac(flight_mode, run):
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
 
     env_kwargs = get_env_kwargs("waypoints")
     env_kwargs["flight_mode"] = flight_mode
@@ -180,22 +176,24 @@ def sac(flight_mode, run):
     env = VecMonitor(env)
     env = VecNormalize(env, norm_obs=True, norm_reward=True)
 
+    # Best configuration from tuning
     model = SAC(
         "MlpPolicy",
         env,
         verbose=0,
         tensorboard_log=f"runs/{run.id}",
-        learning_rate=1e-4,
-        buffer_size=500_000,  
-        learning_starts=10_000,  
-        batch_size=256,
-        tau=0.005,
-        gamma=0.99,
-        ent_coef="auto",         
         device=device,
+        learning_rate=0.0004603865150666861,
+        buffer_size=1_000_000,  
+        learning_starts=2000,  
+        batch_size=128,
+        tau=0.013409850247145992,
+        gamma=0.9829025672846582,
+        train_freq=1,
+        gradient_steps=-1,
+        ent_coef="auto",
+        target_entropy=-12.597293711066428
     )
-    print(f"Using device: {model.device}")
-
     return model, env
 
 
@@ -208,7 +206,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args.algo = args.algo.lower()
 
-    NAME = f"waypoints-mode{args.flight_mode}-{args.algo}"
+    NAME = f"waypoints-mode{args.flight_mode}-{args.algo}-tuned2"
 
     run = wandb.init(
         entity="ChelseaCity",
@@ -235,14 +233,23 @@ if __name__ == "__main__":
     
     os.makedirs("models", exist_ok=True)
     
+    checkpoint_callback = CheckpointCallback(
+        save_freq=max(100_000 // 8, 1),  # every ~100k env steps, adjusted for num_envs
+        save_path=f"models/waypoint/{NAME}_checkpoints/",
+        name_prefix=NAME,
+        save_vecnormalize=True,
+    )
+
     model.learn(
         total_timesteps=args.steps,
-        callback=WandbCallback(
-            model_save_path=f"models/{run.id}",
-            verbose=1,
-        ),
+        callback=CallbackList([
+            checkpoint_callback,
+            WandbCallback(
+                verbose=1,
+            ),
+        ]),
     )
-    
-    model.save(f"models/{NAME}")
-    env.save(f"models/{NAME}_vecnormalize.pkl")
+        
+    model.save(f"models/waypoint/{NAME}")
+    env.save(f"models/waypoint/{NAME}_vecnormalize.pkl")
     run.finish()

@@ -29,7 +29,12 @@ def optimize_ppo(trial):
     
     batch_size = trial.suggest_categorical("batch_size", [128, 256, 512])
     n_steps = trial.suggest_categorical("n_steps", [1024, 2048, 4096])
-    
+    policy_kwargs = trial.suggest_categorical("policy_kwargs", 
+                                              [dict(net_arch=[256, 256]), 
+                                               dict(net_arch=[512, 512]), 
+                                               dict(net_arch=[256, 256, 256]), 
+                                               dict(net_arch=[256, 64, 256])])
+
     if n_steps % batch_size != 0:
         raise optuna.exceptions.TrialPruned()
 
@@ -60,7 +65,7 @@ def optimize_ppo(trial):
         clip_range=clip_range,
         batch_size=batch_size,
         n_steps=n_steps,
-        policy_kwargs=dict(net_arch=[256, 256]), # Matching train script's architecture
+        policy_kwargs=policy_kwargs, # Matching train script's architecture
         verbose=0, 
         device="cpu"
     )
@@ -189,7 +194,7 @@ def main():
     print("Starting Hyperparameter Tuning for QuadX Waypoints...")
     
     study = optuna.create_study(direction="maximize")
-    study.optimize(optimize_sac, n_trials=30)
+    study.optimize(optimize_ppo, n_trials=30)
 
     print("\n" + "="*50)
     print("TUNING FINISHED!")

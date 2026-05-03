@@ -29,8 +29,7 @@ def ppo(flight_mode, run):
     )
 
     env = VecMonitor(env)
-    # KEEP VecNormalize! This is why your brown run succeeded.
-    env = VecNormalize(env, norm_obs=True, norm_reward=True)
+    # env = VecNormalize(env, norm_obs=True, norm_reward=True)
 
     model = PPO(
         "MlpPolicy",

@@ -185,3 +185,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# python scripts/evaluate_norm.py --flight_mode 6 --model models/waypoint/waypoints-mode6-ppo.zip --norm_path models/waypoint/waypoints-mode6-ppo_vecnormalize.pkl --render --env waypoints

@@ -62,7 +62,7 @@ def make_custom_env(env_id, env_kwargs, rank, seed=0):
         # BAse
         env = gym.make(env_id, **env_kwargs)
         # Custom Reward
-        env = WaypointRewardShaping(env) 
+        # env = WaypointRewardShaping(env) 
         env = FlattenWaypointEnv(env, max_waypoints=4)
         env.reset(seed=seed + rank)
         return env
@@ -90,11 +90,11 @@ def ppo(flight_mode, run):
         env,
         verbose=0,
         tensorboard_log=f"runs/{run.id}",
-        learning_rate=1e-4,
+        learning_rate=3e-4,
         n_steps=2048,
         batch_size=256,
-        ent_coef=0.01,
-        gae_lambda=0.88,
+        ent_coef=0.001,
+        gae_lambda=0.9,
         clip_range=0.2,
         policy_kwargs=dict(net_arch=[256, 256, 256]),
         device=device,
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args.algo = args.algo.lower()
 
-    NAME = f"waypoints-mode{args.flight_mode}-{args.algo}-tuned2"
+    NAME = f"waypoints-mode{args.flight_mode}-{args.algo}-nowrap"
 
     run = wandb.init(
         entity="ChelseaCity",

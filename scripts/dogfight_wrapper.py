@@ -2,6 +2,10 @@
 
 Wraps the PettingZoo ParallelEnv into a standard Gymnasium env by controlling
 one agent while opponents use a frozen copy of the policy (self-play).
+
+En gros j'ajoute dans le wrapper des infos a propos de l'adversaire pour 
+pouvoir l'inclure dans la reward pendant le training:
+Exemple: reward quand on mets des dégats à l'adversaire
 """
 
 import gymnasium
@@ -47,6 +51,11 @@ class DogfightSelfPlayEnv(gymnasium.Env):
         self._last_obs = {}
         self._all_agents = None
 
+        # ── Opponent health tracking ──────────────────────────────────────1
+        self._opponent_id       = "uav_1"
+        self._opponent_health   = 1.0   # current health (from their info)
+        self._opponent_prev_health = 1.0
+
     def _make_pz_env(self):
         """Create a fresh PZ environment instance."""
         from PyFlyt.pz_envs import MAFixedwingDogfightEnvV2
@@ -67,6 +76,10 @@ class DogfightSelfPlayEnv(gymnasium.Env):
             return self.action_space.sample()
 
     def reset(self, seed=None, options=None):
+        # Reset health tracking
+        self._opponent_health      = 1.0
+        self._opponent_prev_health = 1.0
+
         # Try reset; if pybullet disconnected, recreate the env
         for attempt in range(3):
             try:
@@ -106,12 +119,29 @@ class DogfightSelfPlayEnv(gymnasium.Env):
         # Store observations for next opponent actions
         self._last_obs = observations
 
+        # ── Update opponent health tracking ───────────────────────────────
+        self._opponent_prev_health = self._opponent_health
+        opponent_info = infos.get(self._opponent_id, {})
+        if "health" in opponent_info:
+            self._opponent_health = float(opponent_info["health"])
+        
+
         # Get our agent's results
-        obs = observations.get(self.agent_id, np.zeros(self.observation_space.shape))
-        reward = rewards.get(self.agent_id, 0.0)
+        obs      = observations.get(self.agent_id, np.zeros(self.observation_space.shape))
+        reward   = rewards.get(self.agent_id, 0.0)
         terminated = terminations.get(self.agent_id, True)
-        truncated = truncations.get(self.agent_id, False)
-        info = infos.get(self.agent_id, {})
+        truncated  = truncations.get(self.agent_id, False)
+        info       = infos.get(self.agent_id, {})
+
+        # ── Inject opponent health into our info ──────────────────────────
+        damage_dealt = max(0.0, self._opponent_prev_health - self._opponent_health)
+        info["opponent_health"]       = self._opponent_health
+        info["opponent_prev_health"]  = self._opponent_prev_health
+        info["opponent_damage_dealt"] = damage_dealt
+        info["opponent_dead"]         = (
+            self._opponent_health == 0.0
+            and opponent_info.get("dead", False)
+        )
 
         # If our agent was removed from env.agents, episode is done
         if self.agent_id not in self.pz_env.agents:

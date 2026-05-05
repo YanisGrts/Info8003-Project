@@ -71,14 +71,13 @@ def make_custom_env(env_id, env_kwargs, rank, seed=0):
         return env
     return _init
 
-def ppo(args, run): # Notice we pass 'args' now instead of just flight_mode
+def ppo(args, run):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     env_kwargs = get_env_kwargs("waypoints")
     env_kwargs["flight_mode"] = args.flight_mode
     
     # Apply the dome size to PyFlyt 
-    # (Check your env_kwargs config, it might be named something like 'spawn_radius' or 'waypoint_bounds')
     env_kwargs["flight_dome_size"] = args.dome_size
     env_kwargs["num_targets"] = args.num_waypoints
 
@@ -89,22 +88,21 @@ def ppo(args, run): # Notice we pass 'args' now instead of just flight_mode
 
     env = VecMonitor(env)
 
-   # --- MODEL LOADING LOGIC ---
     if args.load_model is not None:
         print(f"Loading previous model and normalization stats from: {args.load_model}")
         
-        # 1. Load the normalization stats (CRITICAL)
+        # Load the normalization stats 
         vec_norm_path = f"{args.load_model}_vecnormalize.pkl"
         env = VecNormalize.load(vec_norm_path, env)
         
-        # 2. Load the PPO model
+        # Load the PPO model
         custom_objects = {
             "learning_rate": 3e-5, # Drop it from 1e-4 to 3e-5
             "target_kl": 0.015
         }
         model = PPO.load(args.load_model, env=env, device=device, custom_objects=custom_objects)
         
-        # 3. Set up the new logger for this specific Phase
+        # Set up the new logger for this specific Phase
         new_logger = configure(f"runs/{run.id}", ["csv", "tensorboard"])
         model.set_logger(new_logger)
         
@@ -136,14 +134,13 @@ def sac(flight_mode, run):
     env_kwargs = get_env_kwargs("waypoints")
     env_kwargs["flight_mode"] = flight_mode
 
-    # 2. Create the vectorized environment using the custom builder
-    # We create a list of 8 independent environments using a list comprehension
+    # Create the vectorized environment using the custom builder
     env = SubprocVecEnv([
         make_custom_env("PyFlyt/QuadX-Waypoints-v4", env_kwargs, i) 
         for i in range(8)
     ])
 
-    # 3. Apply the standard SB3 vector wrappers
+    # Apply the standard SB3 vector wrappers
     env = VecMonitor(env)
     env = VecNormalize(env, norm_obs=True, norm_reward=True)
 

@@ -23,3 +23,7 @@ runs/
 *.log
 /jobs/
 *.sbatch
+
+run.py
+help.md
+test.py

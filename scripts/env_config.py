@@ -16,8 +16,8 @@ WAYPOINT_ENV_KWARGS = dict(
 # WAYPOINT_ENV_KWARGS = dict(
 #     goal_reach_distance=4.0,
 #     flight_dome_size=100.0, 
-#     max_duration_seconds=120.0, #120.0,
-#     num_targets=2, # just consider one target for now
+#     max_duration_seconds=120.0,
+#     num_targets=1, # just consider one target for now
 # )
 
 # Easier environment for debugging.

@@ -13,7 +13,7 @@ import torch
 
 # Import custom configurations and wrappers for Waypoints
 from env_config import get_env_kwargs
-from wrappers import FlattenWaypointEnv
+from wrappers import FlattenWaypointEnv, WaypointRewardShaping, ActionRepeat
 
 class WaypointMetricsCallback(BaseCallback):
     def __init__(self, verbose=0):
@@ -37,72 +37,86 @@ class WaypointMetricsCallback(BaseCallback):
 
         return True
 
-class WaypointRewardShaping(gym.Wrapper):
-    def __init__(self, env, gamma=0.5):
-        super().__init__(env)
-        self.gamma = gamma
-        self.previous_distance = 0.0
-        self.previous_action = None
+# class WaypointRewardShaping(gym.Wrapper):
+#     def __init__(self, env, gamma=0.5):
+#         super().__init__(env)
+#         self.gamma = gamma
+#         self.previous_distance = 0.0
+#         self.previous_action = None
 
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        self._last_waypoints = 0
-        self.previous_distance = self._get_distance(obs)
-        return obs, info
+#     def reset(self, **kwargs):
+#         obs, info = self.env.reset(**kwargs)
+#         self._last_waypoints = 0
+#         self.previous_distance = self._get_distance(obs)
+#         return obs, info
 
-    def _get_distance(self, obs):
-        if isinstance(obs, dict) and "target_deltas" in obs:
-            targets = obs["target_deltas"]
-            if len(targets) > 0:
-                return float(np.linalg.norm(targets[0]))
-        return 0.0
+#     def _get_distance(self, obs):
+#         if isinstance(obs, dict) and "target_deltas" in obs:
+#             targets = obs["target_deltas"]
+#             if len(targets) > 0:
+#                 return float(np.linalg.norm(targets[0]))
+#         return 0.0
 
-    # def step(self, action):
-    #     obs, reward, terminated, truncated, info = self.env.step(action)
-    #     if reward >= 10:
-    #         # self.previous_distance = 0.0
-    #         self.previous_distance = self._get_distance(obs)
+#     # def step(self, action):
+#     #     obs, reward, terminated, truncated, info = self.env.step(action)
+#     #     if reward >= 10:
+#     #         # self.previous_distance = 0.0
+#     #         self.previous_distance = self._get_distance(obs)
 
-    #     current_distance = self._get_distance(obs)
+#     #     current_distance = self._get_distance(obs)
 
-    #     # Progress shapping
-    #     shaping = -0.01  # Time step penalty
-    #     if self.previous_distance != 0.0:
-    #         shaping += self.gamma * (self.previous_distance - current_distance)
+#     #     # Progress shapping
+#     #     shaping = -0.01  # Time step penalty
+#     #     if self.previous_distance != 0.0:
+#     #         shaping += self.gamma * (self.previous_distance - current_distance)
         
-    #     # Smoothness 
-    #     # if (self.previous_action is not None):
-    #     #     action_diff = np.linalg.norm(action - self.previous_action)
-    #     #     shaping -= 0.05 * action_diff
-    #     self.previous_distance = current_distance
-    #     self.previous_action = action
-    #     return obs, reward + shaping, terminated, truncated, info
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        current_distance = self._get_distance(obs)
+#     #     # Smoothness 
+#     #     # if (self.previous_action is not None):
+#     #     #     action_diff = np.linalg.norm(action - self.previous_action)
+#     #     #     shaping -= 0.05 * action_diff
+#     #     self.previous_distance = current_distance
+#     #     self.previous_action = action
+#     #     return obs, reward + shaping, terminated, truncated, info
+#     def step(self, action):
+#         obs, reward, terminated, truncated, info = self.env.step(action)
+#         current_distance = self._get_distance(obs)
 
-        shaping = -0.005
-        # Skip shaping on the waypoint-capture step to avoid the spike
-        if self.previous_distance != 0.0 and reward < 10:
-            shaping += self.gamma * (self.previous_distance - current_distance)
+#         shaping = -0.005
+#         # Skip shaping on the waypoint-capture step to avoid the spike
+#         if self.previous_distance != 0.0 and reward < 10:
+#             shaping += self.gamma * (self.previous_distance - current_distance)
 
-        self.previous_distance = current_distance
-        self.previous_action = action
-        return obs, reward + shaping, terminated, truncated, info
+#         self.previous_distance = current_distance
+#         self.previous_action = action
+#         return obs, reward + shaping, terminated, truncated, info
+
+# def make_custom_env(env_id, env_kwargs, rank, seed=0):
+#     """Utility function to chain multiple wrappers for a multiprocessed env."""
+#     def _init():
+#         # BAse
+#         env = gym.make(env_id, **env_kwargs)
+#         # Custom Reward
+#         env = WaypointRewardShaping(env) 
+#         env = FlattenWaypointEnv(env, max_waypoints=4)
+#         env.reset(seed=seed + rank)
+#         return env
+#     return _init
+
 
 def make_custom_env(env_id, env_kwargs, rank, seed=0):
     """Utility function to chain multiple wrappers for a multiprocessed env."""
+    num_targets = env_kwargs.get("num_targets", 4)
     def _init():
-        # BAse
         env = gym.make(env_id, **env_kwargs)
-        # Custom Reward
-        env = WaypointRewardShaping(env) 
+        env = WaypointRewardShaping(env, shaping_coef=0.01)  # must be before flatten
         env = FlattenWaypointEnv(env, max_waypoints=4)
+        env = ActionRepeat(env, n=4)                          # must be after flatten
         env.reset(seed=seed + rank)
         return env
     return _init
 
-def ppo(flight_mode, run, flight_dome_size, num_targets):
+
+def ppo(flight_mode, run, flight_dome_size, num_targets, goal_reach_distance):
     # device = "cuda" if torch.cuda.is_available() else "cpu"
     device = "cpu"
 
@@ -110,6 +124,7 @@ def ppo(flight_mode, run, flight_dome_size, num_targets):
     env_kwargs["flight_mode"] = flight_mode
     env_kwargs["flight_dome_size"] = flight_dome_size
     env_kwargs["num_targets"] = num_targets
+    env_kwargs["goal_reach_distance"] = goal_reach_distance
 
 
     # 2. Create the vectorized environment using the custom builder
@@ -133,12 +148,15 @@ def ppo(flight_mode, run, flight_dome_size, num_targets):
         tensorboard_log=f"runs/{run.id}",
         learning_rate=3e-4,
         n_steps=2048,
-        batch_size=256,
-        ent_coef=0.005,       # slight reduction, let policy sharpen
-        gae_lambda=0.95,      # was 0.9, better credit assignment over long episodes
+        batch_size=64,
+        gamma=0.99,
+        gae_lambda=0.95,
+        ent_coef=0.01,
+        vf_coef=0.5,
+        max_grad_norm=0.5,
         clip_range=0.2,
-        n_epochs=10,          # add this — default is 10 but make it explicit
-        policy_kwargs=dict(net_arch=[256, 256, 256]),
+        n_epochs=10,
+        policy_kwargs=dict(net_arch=dict(pi=[256, 256], vf=[256, 256])),
         device=device,
     )
     # model = PPO.load("models/waypoint/test4-mode6-ppo", env=env)
@@ -190,10 +208,11 @@ if __name__ == "__main__":
     # Note: For waypoints, flight mode 6 (velocity control) or 7 (position control) are usually easier to start with
     parser.add_argument("--flight_mode", type=int, default=6, choices=[-1,0,4,6,7])
     parser.add_argument("--algo", type=str, default="ppo")
-    parser.add_argument("--steps", type=int, default=5000000) # Increased default steps for navigation
+    parser.add_argument("--steps", type=int, default=500000) # Increased default steps for navigation
     parser.add_argument("--name", type=str, required=True) 
     parser.add_argument("--flight_dome_size", type=float, default=150.0) 
     parser.add_argument("--num_targets", type=int, default=4) 
+    parser.add_argument("--goal_reach_distance", type=float, default=4.0) 
     args = parser.parse_args()
     args.algo = args.algo.lower()
 
@@ -216,7 +235,7 @@ if __name__ == "__main__":
     )
 
     if args.algo == "ppo":
-        model, env = ppo(args.flight_mode, run, args.flight_dome_size, args.num_targets)
+        model, env = ppo(args.flight_mode, run, args.flight_dome_size, args.num_targets, args.goal_reach_distance)
     elif args.algo == "sac":
         model, env = sac(args.flight_mode, run)
     else: 
@@ -224,21 +243,21 @@ if __name__ == "__main__":
 
 
     print(f"Training Waypoints started on Flight Mode {args.flight_mode} with {args.algo.upper()}...", flush=True)
-    print(f"Env: flight_dome_size:{args.flight_dome_size}, num_targets:{args.num_targets}", flush=True)
+    print(f"Env: flight_dome_size:{args.flight_dome_size}, num_targets:{args.num_targets}, goal_reach_distance:{args.goal_reach_distance}", flush=True)
     
     os.makedirs("models", exist_ok=True)
     
-    checkpoint_callback = CheckpointCallback(
-        save_freq=max(100_000 // 8, 1),  # every ~100k env steps, adjusted for num_envs
-        save_path=f"models/waypoint/{NAME}_checkpoints/",
-        name_prefix=NAME,
-        save_vecnormalize=True,
-    )
+    # checkpoint_callback = CheckpointCallback(
+    #     save_freq=max(100_000 // 8, 1),  # every ~100k env steps, adjusted for num_envs
+    #     save_path=f"models/waypoint/{NAME}_checkpoints/",
+    #     name_prefix=NAME,
+    #     save_vecnormalize=True,
+    # )
 
     model.learn(
         total_timesteps=args.steps,
         callback=CallbackList([
-            checkpoint_callback,
+            # checkpoint_callback,
             WaypointMetricsCallback(),
             WandbCallback(
                 verbose=1,

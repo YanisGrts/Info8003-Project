@@ -14,18 +14,15 @@ from stable_baselines3.common.logger import configure
 # Import custom configurations and wrappers for Waypoints
 from env_config import get_env_kwargs
 from wrappers import FlattenWaypointEnv
-    
 
 class WaypointRewardShaping(gym.Wrapper):
-    def __init__(self, env, gamma=0.5):
+    def __init__(self, env, shaping_coef=0.2):
         super().__init__(env)
-        self.gamma = gamma
+        self.shaping_coef = shaping_coef
         self.previous_distance = 0.0
-        self.previous_action = None
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        self._last_waypoints = 0
         self.previous_distance = self._get_distance(obs)
         return obs, info
 
@@ -37,27 +34,27 @@ class WaypointRewardShaping(gym.Wrapper):
         return 0.0
 
     def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        if reward >= 10:
-            self.previous_distance = 0.0
-
+        obs, base_reward, terminated, truncated, info = self.env.step(action)
         current_distance = self._get_distance(obs)
 
-        # Progress shapping
-        shaping = -0.01  # Time step penalty
-        if self.previous_distance != 0.0:
-            dist_made = (self.previous_distance - current_distance)
-            shaping += self.gamma * dist_made
-            if dist_made > 0.05:
-                shaping += 2.0 * dist_made  
+        if base_reward >= 10.0 or base_reward <= -10.0:
+            self.previous_distance = current_distance
+            return obs, base_reward, terminated, truncated, info
 
-        # Smoothness 
-        # if (self.previous_action is not None):
-        #     action_diff = np.linalg.norm(action - self.previous_action)
-        #     shaping -= 0.05 * action_diff
+        current_potential = -self.shaping_coef * current_distance
+        previous_potential = -self.shaping_coef * self.previous_distance
+
+        shaping = current_potential - previous_potential
         self.previous_distance = current_distance
-        self.previous_action = action
-        return obs, reward + shaping, terminated, truncated, info
+
+        time_penalty = -0.1
+
+        raw_yaw_rate = self.env.unwrapped.env.state(0)[0][2]
+        yaw_penalty = -0.01 * (raw_yaw_rate ** 2)
+
+        custom_reward = shaping + time_penalty + yaw_penalty
+
+        return obs, custom_reward, terminated, truncated, info
 
 def make_custom_env(env_id, env_kwargs, rank, seed=0):
     """Utility function to chain multiple wrappers for a multiprocessed env."""
@@ -65,7 +62,7 @@ def make_custom_env(env_id, env_kwargs, rank, seed=0):
         # BAse
         env = gym.make(env_id, **env_kwargs)
         # Custom Reward
-        env = WaypointRewardShaping(env) 
+        env = WaypointRewardShaping(env)
         env = FlattenWaypointEnv(env, max_waypoints=4)
         env.reset(seed=seed + rank)
         return env
@@ -108,19 +105,37 @@ def ppo(args, run):
         
     else:
         print("Initializing completely new PPO model...")
-        env = VecNormalize(env, norm_obs=True, norm_reward=True)
+        env = VecNormalize(env, norm_obs=True, norm_reward=False)#True)
+        # model = PPO(
+        #     "MlpPolicy",
+        #     env,
+        #     verbose=0,
+        #     tensorboard_log=f"runs/{run.id}",
+        #     learning_rate=1e-4,
+        #     n_steps=2048,
+        #     batch_size=256,
+        #     ent_coef=0.01,
+        #     gae_lambda=0.88,
+        #     clip_range=0.2,
+        #     policy_kwargs=dict(net_arch=[256, 256, 256]),
+        #     device=device,
+        # )
         model = PPO(
             "MlpPolicy",
             env,
             verbose=0,
             tensorboard_log=f"runs/{run.id}",
-            learning_rate=1e-4,
-            n_steps=2048,
+            learning_rate=3e-4,     # Standard starting LR
+            n_steps=4096,           # Increased horizon
             batch_size=256,
             ent_coef=0.01,
-            gae_lambda=0.88,
+            gae_lambda=0.95,        # Restored to 0.95 for better long-term credit assignment
             clip_range=0.2,
-            policy_kwargs=dict(net_arch=[256, 256, 256]),
+            use_sde=True,           # ADDED SDE for smoother flight
+            policy_kwargs=dict(
+                net_arch=[256, 256], 
+                log_std_init=-2     # Good starting point for SDE
+            ),
             device=device,
         )
         

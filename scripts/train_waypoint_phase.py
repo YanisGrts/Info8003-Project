@@ -231,19 +231,14 @@ def sac(args, run):
         print(f"Loading previous model and normalization stats from: {args.load_model}")
         
         # Load the normalization stats 
-        # vec_norm_path = f"{args.load_model}_vecnormalize.pkl"
-        # env = VecNormalize.load(vec_norm_path, env)
-        # env.reset_running_stats() # reset for new dome
-        
-        # vec_norm_path = f"{args.load_model}_vecnormalize.pkl"
-        # vec_env = VecNormalize.load(vec_norm_path, env)  # save reference directly
-        # vec_env.reset_running_stats()                     # call on VecNormalize directly
-        # env = vec_env                                     # reassign for the rest of the code
-    
         vec_norm_path = f"{args.load_model}_vecnormalize.pkl"
-        env = VecNormalize.load(vec_norm_path, env)  # VecNormalize wraps SubprocVecEnv directly
-        env.reset_running_stats()                     # now this reaches VecNormalize correctly
-        env = VecMonitor(env)                         # VecMonitor goes on top after
+        env = VecMonitor(env)
+        env = VecNormalize.load(vec_norm_path, env)
+
+        # reset_running_stats() doesn't exist in this build, reset manually
+        env.obs_rms.mean[:] = 0.0
+        env.obs_rms.var[:] = 1.0
+        env.obs_rms.count = 1e-4
 
         # Load the PPO model
         custom_objects = {

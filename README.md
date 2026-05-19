@@ -75,26 +75,29 @@ pip install -r requirements.txt
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/env_config.py` | Environment parameters (waypoint overrides) |
-| `scripts/wrappers.py` | `FlattenWaypointEnv` — flattens dict observations |
-| `scripts/dogfight_wrapper.py` | `DogfightSelfPlayEnv` — multi-agent → single-agent wrapper |
-| `scripts/evaluate.py` | Evaluate a trained model on Hover or Waypoints |
-| `scripts/tournament.py` | Elo-rated dogfight tournament |
-| `scripts/submission_template.py` | Tournament submission template |
+| `env_config.py` | Environment parameters (waypoint overrides) |
+| `wrappers.py` | `FlattenWaypointEnv` — flattens dict observations |
+| `dogfight_wrapper.py` | `DogfightSelfPlayEnv` — multi-agent → single-agent wrapper |
+| `evaluate.py` | Evaluate a trained model on Hover or Waypoints |
+| `tournament.py` | Elo-rated dogfight tournament |
+| `submission_template.py` | Tournament submission template |
 
 ## Added scripts
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/evaluate_episode.py` | Runs a single episode and plots step-by-step reward, distance to target, and actions for visual debugging |
-| `scripts/evaluate_norm.py` | Variant of `evaluate.py` with `VecNormalize` support for models trained with observation normalization |
-| `scripts/evaluate_opponents.py` | Evaluates a trained dogfight agent against the handcrafted opponent pool defined in `opponent_agents.py` |
-| `scripts/opponent_agents.py` | Ten handcrafted dogfight opponents of increasing difficulty (random, passive, straight, evasive, aggressive, circling, defensive, altitude-seeking, nose-on) |
-| `scripts/simulate.py` | Runs a trained waypoint agent in the PyBullet GUI with a live visual marker tracking the drone position |
-| `scripts/train_dogfight.py` | Self-play training loop for the dogfight task (PPO or SAC), with periodic opponent snapshots and W&B logging |
-| `scripts/train_hover.py` | Training script for the hover task (PPO or SAC) across flight modes, with W&B logging |
-| `scripts/train_waypoint_phase.py` | Curriculum training script for the waypoints task, supporting multi-phase warm-starting from a previous checkpoint |
-| `scripts/tune_params.py` | Optuna-based hyperparameter search for PPO and SAC on the waypoints task, with W&B logging per trial |
+| `evaluate_norm.py` | Variant of `evaluate.py` with `VecNormalize` support for models trained with observation normalization |
+| `evaluate_opponents.py` | Evaluates a trained dogfight agent against the handcrafted opponent pool defined in `opponent_agents.py` |
+| `opponent_agents.py` | Ten handcrafted dogfight opponents of increasing difficulty (random, passive, straight, evasive, aggressive, circling, defensive, altitude-seeking, nose-on) |
+| `simulate.py` | Runs a trained waypoint agent in the PyBullet GUI with a live visual marker tracking the drone position |
+| `train_dogfight.py` | Self-play training loop for the dogfight task (PPO or SAC), with periodic opponent snapshots and W&B logging |
+| `train_hover.py` | Training script for the hover task (PPO or SAC) across flight modes, with W&B logging |
+| `train_waypoint_phase.py` | Curriculum training script for the waypoints task, supporting multi-phase warm-starting from a previous checkpoint |
+| `tune_params.py` | Optuna-based hyperparameter search for PPO and SAC on the waypoints task, with W&B logging per trial |
+| `train_waypoint_phase_simple.py` | Variant of `train_waypoint_phase.py` using a reduced 13-dimensional observation wrapper (`SimpleObsWrapperTotal`) designed for PPO on flight mode 6 |
+| `evaluate_plot.py` | Variant of `evaluate_norm.py` that additionally plots the drone's 3D flight trajectory and waypoint positions for a single episode |
+| `evaluate_simple_obs.py` | Variant of `evaluate_norm.py` for models trained with the reduced 13-dimensional observation wrapper (`SimpleObsWrapperTotal`) |
+| `run_heuristics.py` | Evaluates a trained dogfight agent against a fixed set of handcrafted opponents from `opponent_agents.py`, reporting wins, losses, and draws over 10 matches per opponent |
 
 ## Evaluation
 

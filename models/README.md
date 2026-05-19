@@ -4,11 +4,7 @@ This folder contains the best model checkpoints we obtained for the different ta
 
 ## 1. [Hover](/models/hover)
 
-For the **Hover** environment, we provide 2 checkpoints:
-- `hover-mode0-ppo`: ...
-- `hover-mode0-sac`: ...
-
-To evaluate those checkpoints, we use the `evaluate.py` script. The results are presented below.
+For the **Hover** environment, we provide 6 checkpoints (4 for PPO, 2 for SAC). They were all trained with `train_hover.py`and evaluated with `evaluate.py`. The results are presented below.
 
 
 ### Results - Flight mode 0
@@ -32,11 +28,11 @@ To evaluate those checkpoints, we use the `evaluate.py` script. The results are 
 ## 2. [Waypoints](/models/waypoint)
 
 For the **Waypoints** environment, we provide 3 checkpoints (each with a `.pkl` file storing the normalizations):
-- `waypoint-mode0-ppo`: ...
-- `waypoint-mode6-ppo`: ...
-- `waypoint-mode6-sac`: ...
+- `waypoints-mode0-ppo-Phase4-Dome150-Wp4`: PPO model trained with `train_waypoint_phase.py` and evaluated with `evaluate_norm.py`.
+- `waypoints-simple-mode6-ppo-Phase2-Dome150-Wp4`: PPO model trained with `train_waypoint_phase_simple.py` and evaluated with `evaluate_simple_obs.py`.
+- `waypoints-mode6-sac-Phase3-Dome150-Wp4-RunA`: SAC model trained with `train_waypoint_phase.py` and evaluated with `evaluate_norm.py`.
 
-To evaluate those checkpoints, we use the `evaluate_norm.py` script. The results are presented below.
+The results for those three checkpoints are presented below.
 
 
 
@@ -49,7 +45,10 @@ To evaluate those checkpoints, we use the `evaluate_norm.py` script. The results
 
 ## 3. [Dogfight](/models/dogfight)
 
-For the **Dogfight** environment, we provide 1 checkpoint:
-- `dogfight`: ...
+For the **Dogfight** environment, we provide 4 checkpoint:
+- `dogfight-phase1-sac`: ...
+- `dogfight-selfplay-phase1`: ...
+- `dogfight-selfplay-phase2`: ...
+- `dogfight-selfplay-phase3`: ...
 
 

@@ -4,13 +4,28 @@ UAV control via deep reinforcement learning using PyFlyt.
 
 Authors: `Yanis Geurts` and `Arthur de Landsheere`
 
-All experiments were tracked using **Weight & Biases**. The project is publicly available at `...`
+All experiments were tracked using **Weight & Biases**. The project is publicly available at https://wandb.ai/ChelseaCity/RL-Drone-Project.
+
+Below is an example of a trajectory we obtain for our best model.
+<figure>
+  <img src="traj.gif" alt="3D drone trajectory">
+   <figcaption style="text-align: center;">Best PPO model on flight mode 0. Dome of 150m radius, 4 waypoints.</figcaption>
+</figure>
+</figure>
 
 ## Repository structure
 
 ```bash
 Info8003-Project
-├── models
+├── jobs # Different scripts used for curriculum training
+│   ├── curA.sbatch
+│   ├── curB.sbatch
+│   ├── curC.sbatch
+│   ├── cur.sbatch
+│   ├── eval.sh
+│   ├── job.sh
+│   └── sac.sbatch
+├── models # Best model checkpoints for every environment
 │   ├── dogfight
 │   ├── hover
 │   ├── waypoint
@@ -18,7 +33,7 @@ Info8003-Project
 ├── project_statement
 │   ├── main.tex
 │   └── project_statement_rl.pdf
-├── scripts
+├── scripts # Training scripts and wrappers
 │   ├── dogfight_wrapper.py
 │   ├── env_config.py
 │   ├── evaluate_episode.py
@@ -36,6 +51,7 @@ Info8003-Project
 │   ├── tune_params.py
 │   └── wrappers.py
 ├── README.md
+├── traj.gif
 └── requirements.txt
 ```
 
@@ -55,6 +71,8 @@ pip install -r requirements.txt
 | `scripts/evaluate.py` | Evaluate a trained model on Hover or Waypoints |
 | `scripts/tournament.py` | Elo-rated dogfight tournament |
 | `scripts/submission_template.py` | Tournament submission template |
+
+## Added scripts
 
 ## Evaluation
 

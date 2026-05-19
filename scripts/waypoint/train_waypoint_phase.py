@@ -105,19 +105,12 @@ class WaypointRewardShaping(gym.Wrapper):
         shaping = self.shaping_coef * (self.previous_distance - current_distance)
         self.previous_distance = current_distance
 
-<<<<<<< HEAD
-        time_penalty = -0.05#0.1
-
-        # raw_yaw_rate = self.env.unwrapped.env.state(0)[0][2]
-        # yaw_penalty = -0.01 * (raw_yaw_rate ** 2)
-=======
-        # time_penalty = -0.1 # PPO
-        time_penalty = -0.05 # SAC
+        time_penalty = -0.1 # PPO
+        # time_penalty = -0.05 # SAC
 
         raw_yaw_rate = self.env.unwrapped.env.state(0)[0][2]
-        # yaw_penalty = -0.01 * (raw_yaw_rate ** 2) # PPO
-        yaw_penalty = -0.001 * (raw_yaw_rate ** 2) # SAC
->>>>>>> feature/arthur
+        yaw_penalty = -0.01 * (raw_yaw_rate ** 2) # PPO
+        # yaw_penalty = -0.001 * (raw_yaw_rate ** 2) # SAC
 
         custom_reward = shaping + time_penalty
 
@@ -175,12 +168,7 @@ def ppo(args, run):
         
     else:
         print("Initializing completely new PPO model...")
-<<<<<<< HEAD
         # env = VecNormalize(env, norm_obs=True, norm_reward=False)#True)
-=======
-        env = VecNormalize(env, norm_obs=True, norm_reward=False)#True)
-
->>>>>>> feature/arthur
         model = PPO(
             "MlpPolicy",
             env,

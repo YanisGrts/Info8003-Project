@@ -18,9 +18,11 @@ STEPS=3000000
 echo ">>> Starting Phase 1 (1 Target, 25m Dome)..."
 python train_waypoint_phase.py \
     --algo $ALGO --flight_mode $MODE --phase 1 \
-    --num_waypoints 1 --dome_size 25 --steps $STEPS
+    --num_waypoints 1 --dome_size 35 --steps $STEPS
 
-PHASE1_MODEL="models/waypoint_phase/waypoints-mode${MODE}-${ALGO}-Phase1-Dome25-Wp1"
+PHASE1_MODEL="models/waypoint_phase/waypoints-mode${MODE}-${ALGO}-Phase1-Dome35-Wp1"
+
+
 
 # ---------------------------------------------------------
 # Phase 2: 3 Targets, 25m Dome
@@ -29,10 +31,10 @@ PHASE1_MODEL="models/waypoint_phase/waypoints-mode${MODE}-${ALGO}-Phase1-Dome25-
 echo ">>> Starting Phase 2 (3 Targets, 25m Dome)..."
 python train_waypoint_phase.py \
     --algo $ALGO --flight_mode $MODE --phase 2 \
-    --num_waypoints 4 --dome_size 25 --steps $STEPS \
+    --num_waypoints 4 --dome_size 35 --steps $STEPS \
     --load_model $PHASE1_MODEL
 
-PHASE2_MODEL="models/waypoint_phase/waypoints-mode${MODE}-${ALGO}-Phase2-Dome25-Wp4"
+PHASE2_MODEL="models/waypoint_phase/waypoints-mode${MODE}-${ALGO}-Phase2-Dome35-Wp4"
 STEPS=5000000
 # # ---------------------------------------------------------
 # # Phase 3: 3 Targets, 125m Dome (Transfer Phase)

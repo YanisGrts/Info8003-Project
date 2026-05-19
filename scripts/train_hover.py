@@ -60,7 +60,7 @@ def sac(flight_mode, run):
         vec_env_cls=DummyVecEnv,
     )
     env = VecMonitor(env)
-    env = VecNormalize(env, norm_obs=True, norm_reward=True)
+    # env = VecNormalize(env, norm_obs=True, norm_reward=True)
 
     if torch.cuda.is_available():
         device = "cuda"
@@ -75,13 +75,14 @@ def sac(flight_mode, run):
         verbose=0,
         tensorboard_log=f"runs/{run.id}",
         learning_rate=3e-4,
-        buffer_size=500_000,  
+        buffer_size=250_000,  
         learning_starts=10_000,  
         batch_size=256,
         tau=0.005,
-        gamma=0.99,
+        gamma=0.98,
         ent_coef="auto",         
         device=device,
+        policy_kwargs=dict(net_arch=[256, 256]),
     )
     print(f"Using device: {model.device}")
 
@@ -152,6 +153,6 @@ if __name__ == "__main__":
             verbose=1,
         ),
     )
-    
+
     model.save(f"models/{NAME}")
     run.finish()

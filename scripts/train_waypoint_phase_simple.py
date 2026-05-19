@@ -13,10 +13,10 @@ import torch
 from stable_baselines3.common.logger import configure
 # Import custom configurations and wrappers for Waypoints
 from env_config import get_env_kwargs
-from wrappers import FlattenWaypointEnv
+from wrappers import FlattenWaypointEnv, SimplifiedObsWrapper, SimpleObsWrapperTotal, WaypointCounterWrapper
 
 class WaypointRewardShaping(gym.Wrapper):
-    def __init__(self, env, shaping_coef=0.2):
+    def __init__(self, env, shaping_coef=1.0): 
         super().__init__(env)
         self.shaping_coef = shaping_coef
         self.previous_distance = 0.0
@@ -27,27 +27,26 @@ class WaypointRewardShaping(gym.Wrapper):
         return obs, info
 
     def _get_distance(self, obs):
-        if isinstance(obs, dict) and "target_deltas" in obs:
-            targets = obs["target_deltas"]
-            if len(targets) > 0:
-                return float(np.linalg.norm(targets[0]))
-        return 0.0
+        # Indices 10, 11, 12 are the [x, y, z] target deltas in your 13-dim obs
+        target_delta = obs[10:13]
+        return float(np.linalg.norm(target_delta))
 
     def step(self, action):
         obs, base_reward, terminated, truncated, info = self.env.step(action)
         current_distance = self._get_distance(obs)
 
-        if base_reward >= 10.0 or base_reward <= -10.0:
+        # Base PyFlyt gives 100 for WP hit, -100 for crash
+        if abs(base_reward) >= 10.0:
             self.previous_distance = current_distance
             return obs, base_reward, terminated, truncated, info
 
+        # Shaping: reward for distance closed
         shaping = self.shaping_coef * (self.previous_distance - current_distance)
         self.previous_distance = current_distance
 
-        time_penalty = -0.05#0.1
-
-        # raw_yaw_rate = self.env.unwrapped.env.state(0)[0][2]
-        # yaw_penalty = -0.01 * (raw_yaw_rate ** 2)
+        # Reduced time penalty for Phase 4 to prevent "panic"
+        # -0.1 is a sweet spot: enough to encourage speed, not enough to cause collapse
+        time_penalty = -0.1
 
         custom_reward = shaping + time_penalty
 
@@ -59,8 +58,12 @@ def make_custom_env(env_id, env_kwargs, rank, seed=0):
         # BAse
         env = gym.make(env_id, **env_kwargs)
         # Custom Reward
+        # env = WaypointRewardShaping(env)
+        # env = FlattenWaypointEnv(env, max_waypoints=4)
+        # env = SimplifiedObsWrapper(env)
+        env = WaypointCounterWrapper(env)
+        env = SimpleObsWrapperTotal(env)
         env = WaypointRewardShaping(env)
-        env = FlattenWaypointEnv(env, max_waypoints=4)
         env.reset(seed=seed + rank)
         return env
     return _init
@@ -80,44 +83,46 @@ def ppo(args, run):
         for i in range(8)
     ])
 
-    env = VecMonitor(env)
+    env = VecMonitor(env, info_keywords=("wps_reached_count", "is_success"))
 
     if args.load_model is not None:
-        print(f"Loading previous model and normalization stats from: {args.load_model}")
+        print(f"Loading Phase 4: Refinement...")
         
-        # Load the normalization stats 
         vec_norm_path = f"{args.load_model}_vecnormalize.pkl"
         env = VecNormalize.load(vec_norm_path, env)
         
-        # Load the PPO model
         custom_objects = {
-            "learning_rate": 3e-5, # Drop it from 1e-4 to 3e-5
-            "target_kl": 0.015
+            "learning_rate": 2e-5,  # Very slow learning to preserve knowledge
+            "ent_coef": 0.0,       # STOP the entropy-driven forgetting
+            "clip_range": 0.1,     # Tighten updates: don't let the policy jump too far
         }
         model = PPO.load(args.load_model, env=env, device=device, custom_objects=custom_objects)
         
-        # Set up the new logger for this specific Phase
+        # Reset noise to a "Precision" level
+        # log_std = -1.2 results in a raw std of ~0.3 (firm but flexible)
+        with torch.no_grad():
+            model.policy.log_std.fill_(-1.2)
+            
         new_logger = configure(f"runs/{run.id}", ["csv", "tensorboard"])
         model.set_logger(new_logger)
         
     else:
         print("Initializing completely new PPO model...")
-        # env = VecNormalize(env, norm_obs=True, norm_reward=False)#True)
+        env = VecNormalize(env, norm_obs=True, norm_reward=False)#True)
         model = PPO(
             "MlpPolicy",
             env,
             verbose=0,
             tensorboard_log=f"runs/{run.id}",
-            learning_rate=2e-4,
-            n_steps=8192,
-            batch_size=512,
-            ent_coef=0.01,
+            learning_rate=1e-4,        # Conservative — we're fine-tuning
+            n_steps=2048,
+            batch_size=256,
+            ent_coef=0.0001,             # High entropy — force exploration
             gae_lambda=0.95,
-            clip_range=0.1,
-            use_sde=False,
-            vf_coef=0.5,
+            clip_range=0.15,
             policy_kwargs=dict(
-                net_arch=[256, 256, 256],
+                activation_fn=torch.nn.Tanh,                # ADDED: Better for continuous actions
+                net_arch=dict(pi=[128, 128], vf=[128, 128])
             ),
             device=device,
         )
@@ -195,7 +200,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args.algo = args.algo.lower()
 
-    NAME = f"waypoints-mode{args.flight_mode}-{args.algo}-Phase{args.phase}-Dome{int(args.dome_size)}-Wp{args.num_waypoints}"
+    NAME = f"waypoints-simple-mode{args.flight_mode}-{args.algo}-Phase{args.phase}-Dome{int(args.dome_size)}-Wp{args.num_waypoints}"
 
     run = wandb.init(
         entity="ChelseaCity",
@@ -244,3 +249,13 @@ if __name__ == "__main__":
     model.save(f"models/waypoint_phase/{NAME}")
     env.save(f"models/waypoint_phase/{NAME}_vecnormalize.pkl")
     run.finish()
+
+# python train_waypoint_phase_mmh.py \
+#     --algo ppo --flight_mode 6 --phase 2 \
+#     --num_waypoints 1 --dome_size 20 --steps 300000 --load_model models/waypoint_phase/waypoints-simple-mode6-ppo-Phase1-Dome20-Wp1.zip
+
+
+
+# python train_waypoint_phase_mmh.py \
+#     --algo ppo --flight_mode 6 --phase 2 \
+#     --num_waypoints 4 --dome_size 150 --steps 50000000 --load_model models/waypoint_phase/waypoints-simple-mode6-ppo-Phase1-Dome20-Wp1.zip

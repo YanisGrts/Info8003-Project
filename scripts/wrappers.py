@@ -37,39 +37,6 @@ class FlattenWaypointEnv(gymnasium.ObservationWrapper):
 
         return np.concatenate([attitude, padded.flatten()])
         
-class WaypointRewardShaping(gymnasium.RewardWrapper):
-    """Potential-based reward shaping on the next waypoint only.
-    
-    Adds φ(s') - φ(s) to each step reward, where:
-        φ(s) = -shaping_coef × ‖target_deltas[0]‖
-    
-    Must be applied BEFORE FlattenWaypointEnv so it sees the raw Dict obs.
-    """
-
-    def __init__(self, env, shaping_coef: float = 0.01):
-        super().__init__(env)
-        self.shaping_coef = shaping_coef
-        self._prev_potential = 0.0
-
-    def _potential(self, obs) -> float:
-        delta = obs["target_deltas"][0]
-        return -self.shaping_coef * float(np.linalg.norm(delta))
-
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        self._prev_potential = self._potential(obs)
-        return obs, info
-
-    def reward(self, reward):
-        shaping = self._curr_potential - self._prev_potential
-        self._prev_potential = self._curr_potential
-        return reward + shaping
-
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        self._curr_potential = self._potential(obs)
-        shaped_reward = self.reward(reward)
-        return obs, shaped_reward, terminated, truncated, info
 
 class ActionRepeat(gymnasium.Wrapper):
     """Repeat each action for n consecutive simulation steps, accumulating reward.
@@ -92,3 +59,96 @@ class ActionRepeat(gymnasium.Wrapper):
             if terminated or truncated:
                 break
         return obs, total_reward, terminated, truncated, info
+    
+class SimplifiedObsWrapper(gymnasium.ObservationWrapper):
+    """
+    Reduces the 33-dim observation to the essential components for
+    mode 6 velocity-command navigation:
+    - angular_velocity (3): still useful for stability awareness
+    - linear_velocity (3): essential — the policy commands velocity, 
+                           so knowing current velocity is critical
+    - target_deltas[0] (3): direction and distance to next waypoint ONLY
+    
+    Total: 9 dimensions instead of 33
+    """
+    def __init__(self, env):
+        super().__init__(env)
+        # New observation space: 9-dimensional
+        self.observation_space = gymnasium.spaces.Box(
+            low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32
+        )
+
+    def observation(self, obs):
+        # obs is already flattened by FlattenWaypointEnv (33-dim)
+        angular_velocity = obs[0:3]    # indices 0-2
+        linear_velocity = obs[7:10]   # indices 8-10
+        next_target = obs[21:24]  # first target_delta (xyz to next waypoint)
+        
+        return np.concatenate([
+            angular_velocity,
+            linear_velocity,
+            next_target,
+        ]).astype(np.float32)
+    
+class SimpleObsWrapperTotal(gymnasium.ObservationWrapper):
+    """
+    Extracts the 13 essential components for stable flight and navigation.
+    """
+    def __init__(self, env):
+        super().__init__(env)
+        
+        # 3 (ang) + 4 (quat) + 3 (lin) + 3 (target) = 13 dimensions
+        self.observation_space = gymnasium.spaces.Box(
+            low=-np.inf, high=np.inf, shape=(13,), dtype=np.float32
+        )
+
+    def observation(self, obs):
+        attitude = obs["attitude"]
+        targets = obs["target_deltas"]
+        
+        # 1. Angular Velocity
+        angular_velocity = attitude[0:3]
+        
+        # 2. Orientation (Quaternion) - CRUCIAL FOR SURVIVAL
+        quaternion = attitude[3:7] 
+        
+        # 3. Linear Velocity
+        linear_velocity = attitude[7:10]
+            
+        # 4. Next Target
+        if len(targets) > 0:
+            next_target = np.array(targets)[0][:3]
+        else:
+            next_target = np.zeros(3, dtype=np.float32)
+            
+        return np.concatenate([
+            angular_velocity,
+            quaternion,
+            linear_velocity,
+            next_target
+        ]).astype(np.float32)
+
+class WaypointCounterWrapper(gymnasium.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.waypoints_reached = 0
+
+    def reset(self, **kwargs):
+        self.waypoints_reached = 0
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        
+        # Check if a target was reached in this specific step
+        if info.get("target_reached", False):
+            self.waypoints_reached += 1
+        
+        # Inject the cumulative count into the info dict
+        info["wps_reached_count"] = self.waypoints_reached
+        
+        # Also inject 'is_success' so SB3 shows you a success rate automatically
+        info["is_success"] = info.get("env_complete", False)
+        
+        return obs, reward, terminated, truncated, info
+    

@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # Array of configurations to test: "ModelName DomeSize NumTargets"
-MODE=0
+MODE=6
 PHASES=(
-    "waypoints-mode${MODE}-ppo-Phase1-Dome25-Wp1 25 1"
-    "waypoints-mode${MODE}-ppo-Phase2-Dome25-Wp4 25 4"
-    "waypoints-mode${MODE}-ppo-Phase3-Dome75-Wp4 75 4"
+    # "waypoints-mode${MODE}-ppo-Phase1-Dome20-Wp1 20 1"
+    # "waypoints-mode${MODE}-ppo-Phase2-Dome150-Wp1 150 1"
+    "waypoints-mode${MODE}-ppo-Phase3-Dome50-Wp4 50 4"
     "waypoints-mode${MODE}-ppo-Phase4-Dome150-Wp4 150 4"
 )
 

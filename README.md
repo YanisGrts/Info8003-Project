@@ -6,12 +6,14 @@ Authors: `Yanis Geurts` and `Arthur de Landsheere`
 
 All experiments were tracked using **Weight & Biases**. The project is publicly available at https://wandb.ai/ChelseaCity/RL-Drone-Project.
 
-Below is an example of a trajectory we obtain for our best model.
+Below is an example of a trajectory we obtain for our best model on the Waypoints environment.
 <figure>
   <img src="traj.gif" alt="3D drone trajectory">
    <figcaption style="text-align: center;">Best PPO model on flight mode 0. Dome of 150m radius, 4 waypoints.</figcaption>
 </figure>
 </figure>
+
+All details can either be found in the [scripts](/scripts/) folder, or in the report (see [docs](/docs/) folder). See the [models](/models/) folder for details about the provided checkpoints and their evaluation.
 
 ## Repository structure
 
@@ -24,7 +26,7 @@ Info8003-Project
 │   ├── cur.sbatch
 │   ├── eval.sh
 │   ├── job.sh
-│   └── sac.sbatch
+│   └── eval.sbatch
 ├── models # Best model checkpoints for every environment
 │   ├── dogfight
 │   ├── hover

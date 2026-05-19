@@ -25,4 +25,5 @@ runs/
 run.py
 help.md
 test.py
-models/
+
+waypoint_phase/

@@ -21,8 +21,6 @@ runs/
 .claude/
 
 *.log
-/jobs/
-*.sbatch
 
 run.py
 help.md

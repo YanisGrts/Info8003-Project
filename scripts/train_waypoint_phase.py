@@ -12,12 +12,8 @@ import argparse
 import torch
 from stable_baselines3.common.logger import configure
 
-
-# Import custom configurations and wrappers for Waypoints
 from env_config import get_env_kwargs
 from wrappers import FlattenWaypointEnv
-
-N_ENVS = 8
 
 def make_eval_env(env_id, env_kwargs, vec_normalize_path=None):
     """Single env for evaluation — no SubprocVecEnv needed."""
@@ -67,8 +63,6 @@ class WaypointMetricsCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         for info in self.locals.get("infos", []):
-            # PyFlyt puts this in the terminal info under "final_info" 
-            # Try both keys to be safe
             wp = info.get("num_targets_reached", info.get("final_info", {}).get("num_targets_reached", None))
             if wp is not None:
                 self._episode_waypoints.append(wp)
@@ -114,10 +108,12 @@ class WaypointRewardShaping(gym.Wrapper):
         shaping = current_potential - previous_potential
         self.previous_distance = current_distance
 
-        time_penalty = -0.1
+        # time_penalty = -0.1 # PPO
+        time_penalty = -0.05 # SAC
 
         raw_yaw_rate = self.env.unwrapped.env.state(0)[0][2]
-        yaw_penalty = -0.001 * (raw_yaw_rate ** 2)
+        # yaw_penalty = -0.01 * (raw_yaw_rate ** 2) # PPO
+        yaw_penalty = -0.001 * (raw_yaw_rate ** 2) # SAC
 
         custom_reward = shaping + time_penalty + yaw_penalty
 
@@ -126,7 +122,7 @@ class WaypointRewardShaping(gym.Wrapper):
 def make_custom_env(env_id, env_kwargs, rank, seed=0, render_mode=None):
     """Utility function to chain multiple wrappers for a multiprocessed env."""
     def _init():
-        # BAse
+        # Base
         if render_mode is None:
             env = gym.make(env_id, **env_kwargs)
         else:
@@ -150,7 +146,7 @@ def ppo(args, run):
 
     env = SubprocVecEnv([
         make_custom_env("PyFlyt/QuadX-Waypoints-v4", env_kwargs, i) 
-        for i in range(8)
+        for i in range(args.n_envs)
     ])
 
     env = VecMonitor(env)
@@ -176,20 +172,7 @@ def ppo(args, run):
     else:
         print("Initializing completely new PPO model...")
         env = VecNormalize(env, norm_obs=True, norm_reward=False)#True)
-        # model = PPO(
-        #     "MlpPolicy",
-        #     env,
-        #     verbose=0,
-        #     tensorboard_log=f"runs/{run.id}",
-        #     learning_rate=1e-4,
-        #     n_steps=2048,
-        #     batch_size=256,
-        #     ent_coef=0.01,
-        #     gae_lambda=0.88,
-        #     clip_range=0.2,
-        #     policy_kwargs=dict(net_arch=[256, 256, 256]),
-        #     device=device,
-        # )
+
         model = PPO(
             "MlpPolicy",
             env,
@@ -222,10 +205,8 @@ def sac(args, run):
 
     env = SubprocVecEnv([
         make_custom_env("PyFlyt/QuadX-Waypoints-v4", env_kwargs, i) 
-        for i in range(N_ENVS)
+        for i in range(args.n_envs)
     ])
-
-    # env = VecMonitor(env)
 
     if args.load_model is not None:
         print(f"Loading previous model and normalization stats from: {args.load_model}")
@@ -234,16 +215,13 @@ def sac(args, run):
         vec_norm_path = f"{args.load_model}_vecnormalize.pkl"
         env = VecMonitor(env)
         env = VecNormalize.load(vec_norm_path, env)
-
-        # reset_running_stats() doesn't exist in this build, reset manually
-        env.obs_rms.mean[:] = 0.0
-        env.obs_rms.var[:] = 1.0
-        env.obs_rms.count = 1e-4
+        env.training = True
 
         # Load the PPO model
         custom_objects = {
             "learning_rate": 3e-5,   # Drop from the initial 3e-4 for fine-tuning
-            "tau": 0.005,            # Soft update coefficient (usually keep default)
+            "tau": 0.005,            # Soft update coefficient
+            "target_entropy": -4.0,
         }
         model = SAC.load(args.load_model, env=env, device=device, custom_objects=custom_objects)
         
@@ -268,14 +246,14 @@ def sac(args, run):
             train_freq=16,             # Update every step (off-policy)
             gradient_steps=8,
             ent_coef="auto",          # SAC auto-tunes entropy — leave this as "auto"
-            target_entropy=0.0,
+            target_entropy=-4.0,
             use_sde=True,             # Same SDE trick your colleague used for smoother flight
             sde_sample_freq=64,
             policy_kwargs=dict(
                 net_arch=[256, 256],
                 log_std_init=-3,
             ),
-            learning_starts=20_000,
+            learning_starts=5_000,
             device=device,
         )
 
@@ -305,11 +283,13 @@ if __name__ == "__main__":
     parser.add_argument("--load_model", type=str, default=None, help="Path to a previously trained model (.zip)")
     parser.add_argument("--phase", type=int, default=1, help="Phase number for naming the run")
     parser.add_argument("--num_waypoints", type=int, default=1, help="Number of active targets")
+    parser.add_argument("--run_id", type=str, default="", help="Run label e.g. RunA, RunB, RunC")
+    parser.add_argument("--n_envs", type=int, default=8, help="Number of parallel environments.")
 
     args = parser.parse_args()
     args.algo = args.algo.lower()
 
-    NAME = f"waypoints-mode{args.flight_mode}-{args.algo}-Phase{args.phase}-Dome{int(args.dome_size)}-Wp{args.num_waypoints}"
+    NAME = f"waypoints-mode{args.flight_mode}-{args.algo}-Phase{args.phase}-Dome{int(args.dome_size)}-Wp{args.num_waypoints}-{args.run_id}"
 
     run = wandb.init(
         entity="ChelseaCity",
@@ -349,12 +329,12 @@ if __name__ == "__main__":
         total_timesteps=args.steps,
         callback=CallbackList([
             WaypointMetricsCallback(),
-            VideoLoggerCallback(eval_env, log_freq=50_000),
+            # VideoLoggerCallback(eval_env, log_freq=50_000),
             EvalCallback(
                 eval_env,
                 best_model_save_path=f"models/waypoint_phase/{NAME}_best/",
                 log_path=f"runs/{run.id}",
-                eval_freq=max(10_000 // N_ENVS, 1),  # every ~10k env steps
+                eval_freq=max(100_000 // args.n_envs, 1),  # every ~10k env steps
                 n_eval_episodes=5,
                 deterministic=True,
                 render=False,

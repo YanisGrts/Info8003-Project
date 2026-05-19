@@ -2,6 +2,43 @@
 
 UAV control via deep reinforcement learning using PyFlyt.
 
+Authors: `Yanis Geurts` and `Arthur de Landsheere`
+
+All experiments were tracked using **Weight & Biases**. The project is publicly available at `...`
+
+## Repository structure
+
+```bash
+Info8003-Project
+├── models
+│   ├── dogfight
+│   ├── hover
+│   ├── waypoint
+│   └── README.md
+├── project_statement
+│   ├── main.tex
+│   └── project_statement_rl.pdf
+├── scripts
+│   ├── dogfight_wrapper.py
+│   ├── env_config.py
+│   ├── evaluate_episode.py
+│   ├── evaluate_norm.py
+│   ├── evaluate_opponents.py
+│   ├── evaluate.py
+│   ├── opponent_agents.py
+│   ├── simulate.py
+│   ├── submission_template.py
+│   ├── tournament.py
+│   ├── train_dogfight.py
+│   ├── train_hover.py
+│   ├── train_waypoint_phase.py
+│   ├── train_waypoint.py
+│   ├── tune_params.py
+│   └── wrappers.py
+├── README.md
+└── requirements.txt
+```
+
 ## Setup
 
 ```bash
@@ -38,8 +75,3 @@ Copy `scripts/submission_template.py` to `groupXX_name.py` and implement `load_m
 Your model must expose: `model.predict(obs, deterministic=True) -> (action, info)`.
 
 See the project statement for full details.
-
-
-## WAYPOINT ENVIRONMENT:
-
-J'utilise VecNormalize dans l'environment pour normaliser les rewards et observations car c'est sensé être meilleur. Du coup quand on évalue le modele, il faut aller chopper la normalisation qui a été déterminéee pendant le training. Pour faire ça on exporte un fichier pkl qu'on doit import dans l'evaluation (evaluate_norm et evaluate_episode). <

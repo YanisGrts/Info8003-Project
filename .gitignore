@@ -21,10 +21,9 @@ runs/
 .claude/
 
 *.log
-/jobs/
-*.sbatch
 
 run.py
 help.md
 test.py
-models/
+
+waypoint_phase/

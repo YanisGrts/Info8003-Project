@@ -6,14 +6,75 @@ from wandb.integration.sb3 import WandbCallback
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.vec_env import VecMonitor, SubprocVecEnv, DummyVecEnv, VecNormalize
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
+from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList, BaseCallback, EvalCallback
 import os
 import argparse
 import torch
 from stable_baselines3.common.logger import configure
-# Import custom configurations and wrappers for Waypoints
+
 from env_config import get_env_kwargs
 from wrappers import FlattenWaypointEnv
+
+def make_eval_env(env_id, env_kwargs, vec_normalize_path=None):
+    """Single env for evaluation — no SubprocVecEnv needed."""
+    env = DummyVecEnv([make_custom_env(env_id, env_kwargs, rank=99, render_mode="rgb_array")])
+    env = VecMonitor(env)
+    if vec_normalize_path and os.path.exists(vec_normalize_path):
+        env = VecNormalize.load(vec_normalize_path, env)
+        env.training = False   # freeze stats during eval
+        env.norm_reward = False
+    else:
+        env = VecNormalize(env, norm_obs=True, norm_reward=False, training=False)
+    return env
+
+class VideoLoggerCallback(BaseCallback):
+    """Records a short eval episode and uploads it to WandB."""
+    def __init__(self, eval_env, log_freq=50_000, verbose=0):
+        super().__init__(verbose)
+        self.eval_env = eval_env
+        self.log_freq = log_freq
+
+    def _on_step(self) -> bool:
+        if self.num_timesteps % self.log_freq == 0:
+            frames = []
+            obs = self.eval_env.reset()
+            for _ in range(300):  # ~10s at 30fps
+                action, _ = self.model.predict(obs, deterministic=True)
+                obs, _, done, _ = self.eval_env.step(action)
+                frame = self.eval_env.render()
+                if frame is not None:
+                    frame = frame[..., :3]  # drop the alpha channel: (H, W, 4) → (H, W, 3)
+                    frames.append(frame)
+                if done[0]:
+                    break
+
+            if frames:
+                # WandB expects (time, H, W, C) → transpose to (time, C, H, W)
+                video = np.stack(frames).transpose(0, 3, 1, 2)
+                wandb.log({
+                    "eval/video": wandb.Video(video, fps=30, format="mp4")
+                })
+        return True
+
+class WaypointMetricsCallback(BaseCallback):
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+        self._episode_waypoints = []
+
+    def _on_step(self) -> bool:
+        for info in self.locals.get("infos", []):
+            wp = info.get("num_targets_reached", info.get("final_info", {}).get("num_targets_reached", None))
+            if wp is not None:
+                self._episode_waypoints.append(wp)
+
+        if len(self._episode_waypoints) >= 10:  # log every 10 completed episodes
+            wandb.log({
+                "waypoints/mean_reached": np.mean(self._episode_waypoints),
+                "waypoints/max_reached": np.max(self._episode_waypoints),
+            })
+            self._episode_waypoints = []
+
+        return True
 
 class WaypointRewardShaping(gym.Wrapper):
     def __init__(self, env, shaping_coef=0.2):
@@ -44,20 +105,32 @@ class WaypointRewardShaping(gym.Wrapper):
         shaping = self.shaping_coef * (self.previous_distance - current_distance)
         self.previous_distance = current_distance
 
+<<<<<<< HEAD
         time_penalty = -0.05#0.1
 
         # raw_yaw_rate = self.env.unwrapped.env.state(0)[0][2]
         # yaw_penalty = -0.01 * (raw_yaw_rate ** 2)
+=======
+        # time_penalty = -0.1 # PPO
+        time_penalty = -0.05 # SAC
+
+        raw_yaw_rate = self.env.unwrapped.env.state(0)[0][2]
+        # yaw_penalty = -0.01 * (raw_yaw_rate ** 2) # PPO
+        yaw_penalty = -0.001 * (raw_yaw_rate ** 2) # SAC
+>>>>>>> feature/arthur
 
         custom_reward = shaping + time_penalty
 
         return obs, custom_reward, terminated, truncated, info
 
-def make_custom_env(env_id, env_kwargs, rank, seed=0):
+def make_custom_env(env_id, env_kwargs, rank, seed=0, render_mode=None):
     """Utility function to chain multiple wrappers for a multiprocessed env."""
     def _init():
-        # BAse
-        env = gym.make(env_id, **env_kwargs)
+        # Base
+        if render_mode is None:
+            env = gym.make(env_id, **env_kwargs)
+        else:
+            env = gym.make(env_id, render_mode="rgb_array", **env_kwargs)
         # Custom Reward
         env = WaypointRewardShaping(env)
         env = FlattenWaypointEnv(env, max_waypoints=4)
@@ -77,7 +150,7 @@ def ppo(args, run):
 
     env = SubprocVecEnv([
         make_custom_env("PyFlyt/QuadX-Waypoints-v4", env_kwargs, i) 
-        for i in range(8)
+        for i in range(args.n_envs)
     ])
 
     env = VecMonitor(env)
@@ -102,7 +175,12 @@ def ppo(args, run):
         
     else:
         print("Initializing completely new PPO model...")
+<<<<<<< HEAD
         # env = VecNormalize(env, norm_obs=True, norm_reward=False)#True)
+=======
+        env = VecNormalize(env, norm_obs=True, norm_reward=False)#True)
+
+>>>>>>> feature/arthur
         model = PPO(
             "MlpPolicy",
             env,
@@ -142,45 +220,84 @@ def ppo(args, run):
     print(f"Using device: {model.device}")
     return model, env
 
-def sac(flight_mode, run):
+def sac(args, run):
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
 
     env_kwargs = get_env_kwargs("waypoints")
-    env_kwargs["flight_mode"] = flight_mode
+    env_kwargs["flight_mode"] = args.flight_mode
+    env_kwargs["flight_dome_size"] = args.dome_size
+    env_kwargs["num_targets"] = args.num_waypoints
 
-    # Create the vectorized environment using the custom builder
     env = SubprocVecEnv([
         make_custom_env("PyFlyt/QuadX-Waypoints-v4", env_kwargs, i) 
-        for i in range(8)
+        for i in range(args.n_envs)
     ])
 
-    # Apply the standard SB3 vector wrappers
-    env = VecMonitor(env)
-    env = VecNormalize(env, norm_obs=True, norm_reward=True)
+    if args.load_model is not None:
+        print(f"Loading previous model and normalization stats from: {args.load_model}")
+        
+        # Load the normalization stats 
+        vec_norm_path = f"{args.load_model}_vecnormalize.pkl"
+        env = VecMonitor(env)
+        env = VecNormalize.load(vec_norm_path, env)
+        env.training = True
 
-    # Best configuration from tuning
-    model = SAC(
-        "MlpPolicy",
-        env,
-        verbose=0,
-        tensorboard_log=f"runs/{run.id}",
-        device=device,
-        learning_rate=0.0004603865150666861,
-        buffer_size=1_000_000,  
-        learning_starts=2000,  
-        batch_size=128,
-        tau=0.013409850247145992,
-        gamma=0.9829025672846582,
-        train_freq=1,
-        gradient_steps=-1,
-        ent_coef="auto",
-        target_entropy=-12.597293711066428
-    )
-    return model, env
+        # Load the PPO model
+        custom_objects = {
+            "learning_rate": 3e-5,   # Drop from the initial 3e-4 for fine-tuning
+            "tau": 0.005,            # Soft update coefficient
+            "target_entropy": -4.0,
+        }
+        model = SAC.load(args.load_model, env=env, device=device, custom_objects=custom_objects)
+        
+        # Set up the new logger for this specific Phase
+        new_logger = configure(f"runs/{run.id}", ["csv", "tensorboard"])
+        model.set_logger(new_logger)
+    else:
+        print("Initializing completely new SAC model...")
+        env = VecMonitor(env)
+        env = VecNormalize(env, norm_obs=True, norm_reward=False)#True)
+      
+        model = SAC(
+            "MlpPolicy",
+            env,
+            verbose=0,
+            tensorboard_log=f"runs/{run.id}",
+            learning_rate=3e-4,
+            buffer_size=500_000,      # Replay buffer — SAC needs this, PPO doesn't
+            batch_size=512,
+            tau=0.005,                # Soft update rate for target networks
+            gamma=0.99,
+            train_freq=16,             # Update every step (off-policy)
+            gradient_steps=8,
+            ent_coef="auto",          # SAC auto-tunes entropy — leave this as "auto"
+            target_entropy=-4.0,
+            use_sde=True,             # Same SDE trick your colleague used for smoother flight
+            sde_sample_freq=64,
+            policy_kwargs=dict(
+                net_arch=[256, 256],
+                log_std_init=-3,
+            ),
+            learning_starts=5_000,
+            device=device,
+        )
+
+    eval_env_kwargs = get_env_kwargs("waypoints")
+    eval_env_kwargs["flight_mode"] = args.flight_mode
+    eval_env_kwargs["flight_dome_size"] = args.dome_size
+    eval_env_kwargs["num_targets"] = args.num_waypoints
+
+    vec_norm_path = f"{args.load_model}_vecnormalize.pkl" if args.load_model else None
+    eval_env = make_eval_env("PyFlyt/QuadX-Waypoints-v4", eval_env_kwargs, vec_normalize_path=None)
+
+    print(f"Using device: {model.device}")
+    return model, env, eval_env
+
 
 
 if __name__ == "__main__":
+    print(f"CPU cores visible: {os.cpu_count()}", flush=True)
+
     parser = argparse.ArgumentParser(description="RL-Drone-Project-Waypoints")
     # Note: For waypoints, flight mode 6 (velocity control) or 7 (position control) are usually easier to start with
     parser.add_argument("--flight_mode", type=int, default=6, choices=[-1,0,4,6,7])
@@ -191,11 +308,13 @@ if __name__ == "__main__":
     parser.add_argument("--load_model", type=str, default=None, help="Path to a previously trained model (.zip)")
     parser.add_argument("--phase", type=int, default=1, help="Phase number for naming the run")
     parser.add_argument("--num_waypoints", type=int, default=1, help="Number of active targets")
+    parser.add_argument("--run_id", type=str, default="", help="Run label e.g. RunA, RunB, RunC")
+    parser.add_argument("--n_envs", type=int, default=8, help="Number of parallel environments.")
 
     args = parser.parse_args()
     args.algo = args.algo.lower()
 
-    NAME = f"waypoints-mode{args.flight_mode}-{args.algo}-Phase{args.phase}-Dome{int(args.dome_size)}-Wp{args.num_waypoints}"
+    NAME = f"waypoints-mode{args.flight_mode}-{args.algo}-Phase{args.phase}-Dome{int(args.dome_size)}-Wp{args.num_waypoints}-{args.run_id}"
 
     run = wandb.init(
         entity="ChelseaCity",
@@ -216,7 +335,7 @@ if __name__ == "__main__":
     if args.algo == "ppo":
         model, env = ppo(args, run)
     elif args.algo == "sac":
-        model, env = sac(args.flight_mode, run)
+        model, env, eval_env = sac(args, run)
     else: 
         raise ValueError("Unknown algo!")
 
@@ -224,23 +343,32 @@ if __name__ == "__main__":
     
     os.makedirs("models", exist_ok=True)
     
-    checkpoint_callback = CheckpointCallback(
-        save_freq=max(100_000 // 8, 1),  # every ~100k env steps, adjusted for num_envs
-        save_path=f"models/waypoint_phase/{NAME}_checkpoints/",
-        name_prefix=NAME,
-        save_vecnormalize=True,
-    )
+    # checkpoint_callback = CheckpointCallback(
+    #     save_freq=max(100_000 // 8, 1),  # every ~100k env steps, adjusted for num_envs
+    #     save_path=f"models/waypoint_phase/{NAME}_checkpoints/",
+    #     name_prefix=NAME,
+    #     save_vecnormalize=True,
+    # )
 
     model.learn(
         total_timesteps=args.steps,
         callback=CallbackList([
-            checkpoint_callback,
-            WandbCallback(
-                verbose=1,
+            WaypointMetricsCallback(),
+            # VideoLoggerCallback(eval_env, log_freq=50_000),
+            EvalCallback(
+                eval_env,
+                best_model_save_path=f"models/waypoint_phase/{NAME}_best/",
+                log_path=f"runs/{run.id}",
+                eval_freq=max(100_000 // args.n_envs, 1),  # every ~10k env steps
+                n_eval_episodes=5,
+                deterministic=True,
+                render=False,
             ),
+            WandbCallback(verbose=1),
         ]),
     )
-        
+
+
     model.save(f"models/waypoint_phase/{NAME}")
     env.save(f"models/waypoint_phase/{NAME}_vecnormalize.pkl")
     run.finish()

@@ -159,11 +159,8 @@ def main():
     parser.add_argument("--flight_mode", type=int, default=0)
     parser.add_argument("--render", action="store_true")
     parser.add_argument("--output", type=str, default=None, help="Save results to JSON")
-    
-    # --- ADD THESE TWO LINES ---
     parser.add_argument("--dome_size", type=float, default=150.0)
     parser.add_argument("--num_targets", type=int, default=4)
-    # ---------------------------
     
     args = parser.parse_args()
 
@@ -174,11 +171,9 @@ def main():
 
     env_kwargs = get_env_kwargs(args.env)
     
-    # --- UPDATE THIS BLOCK ---
     if args.env == "waypoints":
         env_kwargs["flight_dome_size"] = args.dome_size
         env_kwargs["num_targets"] = args.num_targets
-    # -------------------------
 
     results = evaluate_model(
         args.model, env_map[args.env], args.n_episodes, args.flight_mode, args.render,

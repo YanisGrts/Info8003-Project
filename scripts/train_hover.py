@@ -20,7 +20,6 @@ def ppo(flight_mode, run):
     else:
         device = "cpu"
 
-    # Use 8 environments (or more, depending on your CPU)
     env = make_vec_env(
         "PyFlyt/QuadX-Hover-v4",
         n_envs=8, 
@@ -88,32 +87,6 @@ def sac(flight_mode, run):
 
     return model
 
-# def sac(flight_mode, run):
-#     env = gymnasium.make("PyFlyt/QuadX-Hover-v4", flight_mode=flight_mode)
-#     env = Monitor(env)
-
-#     if torch.cuda.is_available():
-#         device = "cuda"
-#     else:
-#         device = "cpu"
-
-#     model = SAC(
-#         "MlpPolicy",
-#         env,
-#         verbose=0,
-#         tensorboard_log=f"runs/{run.id}",
-#         learning_rate=3e-4,
-#         buffer_size=300_000,
-#         learning_starts=10_000,  # collect random experience before updating
-#         batch_size=256,
-#         tau=0.005,
-#         gamma=0.99,
-#         ent_coef="auto",         # SAC auto-tunes entropy for exploration
-#         device=device,
-#     )
-#     print(f"Using device: {model.device}")
-
-#     return model
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="RL-Drone-Project")

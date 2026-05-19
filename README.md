@@ -74,6 +74,18 @@ pip install -r requirements.txt
 
 ## Added scripts
 
+| Script | Purpose |
+|--------|---------|
+| `scripts/evaluate_episode.py` | Runs a single episode and plots step-by-step reward, distance to target, and actions for visual debugging |
+| `scripts/evaluate_norm.py` | Variant of `evaluate.py` with `VecNormalize` support for models trained with observation normalization |
+| `scripts/evaluate_opponents.py` | Evaluates a trained dogfight agent against the handcrafted opponent pool defined in `opponent_agents.py` |
+| `scripts/opponent_agents.py` | Ten handcrafted dogfight opponents of increasing difficulty (random, passive, straight, evasive, aggressive, circling, defensive, altitude-seeking, nose-on) |
+| `scripts/simulate.py` | Runs a trained waypoint agent in the PyBullet GUI with a live visual marker tracking the drone position |
+| `scripts/train_dogfight.py` | Self-play training loop for the dogfight task (PPO or SAC), with periodic opponent snapshots and W&B logging |
+| `scripts/train_hover.py` | Training script for the hover task (PPO or SAC) across flight modes, with W&B logging |
+| `scripts/train_waypoint_phase.py` | Curriculum training script for the waypoints task, supporting multi-phase warm-starting from a previous checkpoint |
+| `scripts/tune_params.py` | Optuna-based hyperparameter search for PPO and SAC on the waypoints task, with W&B logging per trial |
+
 ## Evaluation
 
 ```bash

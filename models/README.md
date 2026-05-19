@@ -46,9 +46,14 @@ The results for those three checkpoints are presented below.
 ## 3. [Dogfight](/models/dogfight)
 
 For the **Dogfight** environment, we provide 4 checkpoint:
-- `dogfight-phase1-sac`: ...
-- `dogfight-selfplay-phase1`: ...
-- `dogfight-selfplay-phase2`: ...
-- `dogfight-selfplay-phase3`: ...
+- `dogfight-phase1-sac`: SAC model baseline trained with `train_dogfight`. 
+- `dogfight-selfplay-phase1`,`dogfight-selfplay-phase2`, and `dogfight-selfplay-phase3`: PPO models trained with `train_dogfight`. Each version was trained starting from the previous phase (from scratch for the first phase)
 
+To select the best model for the final submission, we evaluated all checkpoints in a round-robin tournament (10 matches per pair). The models are ranked below based on their final Elo scores:
 
+| Rank | Model Checkpoint | Final Elo |
+| :--- | :--- | :--- |
+| 1 | `dogfight-selfplay-phase1` | **1528.0** |
+| 2 | `dogfight-selfplay-phase3` | 1509.0 |
+| 3 | `dogfight-selfplay-phase2` | 1487.4 |
+| 4 | `dogfight-phase1-sac` | 1475.6 |

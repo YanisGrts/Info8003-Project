@@ -18,7 +18,7 @@ import PyFlyt.gym_envs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from env_config import get_env_kwargs
-from wrappers import FlattenWaypointEnv
+from wrappers.wrappers import FlattenWaypointEnv
 
 
 def make_env(env_id, flight_mode=0, render_mode=None, env_kwargs=None):

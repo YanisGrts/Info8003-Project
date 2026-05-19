@@ -13,7 +13,7 @@ import torch
 from stable_baselines3.common.logger import configure
 
 from env_config import get_env_kwargs
-from wrappers import FlattenWaypointEnv
+from wrappers.wrappers import FlattenWaypointEnv
 
 def make_eval_env(env_id, env_kwargs, vec_normalize_path=None):
     """Single env for evaluation — no SubprocVecEnv needed."""

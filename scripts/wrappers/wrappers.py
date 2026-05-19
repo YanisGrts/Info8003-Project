@@ -37,7 +37,6 @@ class FlattenWaypointEnv(gymnasium.ObservationWrapper):
         n = min(len(targets), self.max_waypoints)
         padded[:n] = targets[:n]
 
-<<<<<<< HEAD
         return np.concatenate([attitude, padded.flatten()])
         
 
@@ -155,6 +154,4 @@ class WaypointCounterWrapper(gymnasium.Wrapper):
         
         return obs, reward, terminated, truncated, info
     
-=======
         return np.concatenate([attitude, padded.flatten()])
->>>>>>> feature/arthur

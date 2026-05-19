@@ -19,6 +19,10 @@ All details can either be found in the [scripts](/scripts/) folder, or in the re
 
 ```bash
 Info8003-Project
+├── docs
+│   ├── main.tex
+│   ├── report.pdf
+│   └── project_statement_rl.pdf
 ├── jobs # Different scripts used for curriculum training
 │   ├── curA.sbatch
 │   ├── curB.sbatch
@@ -32,26 +36,30 @@ Info8003-Project
 │   ├── hover
 │   ├── waypoint
 │   └── README.md
-├── project_statement
-│   ├── main.tex
-│   └── project_statement_rl.pdf
 ├── scripts # Training scripts and wrappers
-│   ├── dogfight_wrapper.py
+│   ├── dogfight
+│   │   ├── opponent_agents.py
+│   │   ├── run_heuristics.py
+│   │   ├── submission_template.py
+│   │   ├── tournament.py
+│   │   └── train_dogfight.py
 │   ├── env_config.py
-│   ├── evaluate_episode.py
-│   ├── evaluate_norm.py
-│   ├── evaluate_opponents.py
-│   ├── evaluate.py
-│   ├── opponent_agents.py
-│   ├── simulate.py
-│   ├── submission_template.py
-│   ├── tournament.py
-│   ├── train_dogfight.py
-│   ├── train_hover.py
-│   ├── train_waypoint_phase.py
-│   ├── train_waypoint.py
-│   ├── tune_params.py
-│   └── wrappers.py
+│   ├── eval
+│   │   ├── evaluate_norm.py
+│   │   ├── evaluate_opponents.py
+│   │   ├── evaluate_plot.py
+│   │   ├── evaluate.py
+│   │   └── evaluate_simple_obs.py
+│   ├── hover
+│   │   └── train_hover.py
+│   ├── waypoint
+│   │   ├── simulate.py
+│   │   ├── train_waypoint_phase.py
+│   │   ├── train_waypoint_phase_simple.py
+│   │   └── tune_params.py
+│   └── wrappers
+│       ├── dogfight_wrapper.py
+│       └── wrappers.py
 ├── README.md
 ├── traj.gif
 └── requirements.txt

@@ -7,8 +7,8 @@ import pybullet as p
 import numpy as np
 
 from env_config import get_env_kwargs
-from wrappers import FlattenWaypointEnv
-from train_waypoint_phase import WaypointRewardShaping, make_custom_env
+from wrappers.wrappers import FlattenWaypointEnv
+from waypoint.train_waypoint_phase import WaypointRewardShaping, make_custom_env
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

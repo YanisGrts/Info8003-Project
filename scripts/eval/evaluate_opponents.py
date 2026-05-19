@@ -23,7 +23,7 @@ import numpy as np
 from stable_baselines3 import PPO, SAC
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from opponent_agents import ALL_OPPONENTS
+from dogfight.opponent_agents import ALL_OPPONENTS
 from PyFlyt.pz_envs import MAFixedwingDogfightEnvV2
 COLLISION_PENALTY = -1000.0   # must match the tournament runner
 

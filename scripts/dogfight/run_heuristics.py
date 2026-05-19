@@ -1,6 +1,6 @@
 from stable_baselines3 import PPO, SAC
-from dogfight_wrapper import DogfightSelfPlayEnv
-from opponent_agents import ALL_OPPONENTS
+from wrappers.dogfight_wrapper import DogfightSelfPlayEnv
+from dogfight.opponent_agents import ALL_OPPONENTS
 
 # --- CHANGE THESE PATHS TO YOUR ACTUAL CHECKPOINTS ---
 my_model_path = "../models/dogfight/dogfight-selfplay-phase3.zip" 

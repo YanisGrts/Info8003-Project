@@ -13,7 +13,7 @@ import torch
 from stable_baselines3.common.logger import configure
 # Import custom configurations and wrappers for Waypoints
 from env_config import get_env_kwargs
-from wrappers import FlattenWaypointEnv, SimplifiedObsWrapper, SimpleObsWrapperTotal, WaypointCounterWrapper
+from wrappers.wrappers import FlattenWaypointEnv, SimplifiedObsWrapper, SimpleObsWrapperTotal, WaypointCounterWrapper
 
 class WaypointRewardShaping(gym.Wrapper):
     def __init__(self, env, shaping_coef=1.0): 

@@ -1,6 +1,6 @@
 """
 Evaluation script for trained RL agents on PyFlyt environments.
-Computes statistics and optionally renders episodes.
+Computes statistics, optionally renders episodes, and plots 3D trajectories.
 """
 
 import argparse
@@ -11,12 +11,17 @@ import sys
 import gymnasium
 import numpy as np
 import PyFlyt.gym_envs
+
+# Plotting libraries
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
 # Import SB3 VecEnv wrappers to match training
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from env_config import get_env_kwargs
-from wrappers import FlattenWaypointEnv, SimplifiedObsWrapper, SimpleObsWrapperTotal
+from wrappers.wrappers import FlattenWaypointEnv
 
 
 def make_env(env_id, flight_mode=0, render_mode=None, env_kwargs=None):
@@ -24,8 +29,7 @@ def make_env(env_id, flight_mode=0, render_mode=None, env_kwargs=None):
     env = gymnasium.make(env_id, flight_mode=flight_mode, render_mode=render_mode,
                          **(env_kwargs or {}))
     if isinstance(env.observation_space, gymnasium.spaces.Dict):
-        # env = FlattenWaypointEnv(env, max_waypoints=4)
-        env = SimpleObsWrapperTotal(env)
+        env = FlattenWaypointEnv(env, max_waypoints=4)
     return env
 
 
@@ -47,42 +51,125 @@ def load_model(model_path):
     raise ValueError(f"Could not load model: {model_path}")
 
 
+def get_drone_position(env, obs):
+    """Extracts the drone's [x, y, z] position from the unnormalized observation array."""
+    try:
+        # If the environment is wrapped in VecNormalize, we must get the unscaled observation
+        if hasattr(env, "get_original_obs"):
+            raw_obs = env.get_original_obs()
+        else:
+            raw_obs = obs
+        
+        # In DummyVecEnv, the shape is (1, 33).
+        # Based on the environment space, linear position is at indices 10, 11, 12
+        return raw_obs[0, 10:13].copy()
+    except Exception as e:
+        print(f"Warning: Could not extract position ({e})")
+        return np.array([0.0, 0.0, 0.0])
+def get_waypoints(env):
+    """Attempts to extract target waypoints for plotting."""
+    try:
+        unwrapped = env.envs[0].unwrapped
+        # PyFlyt >= 0.3.0 stores them in the .waypoints object
+        if hasattr(unwrapped, "waypoints") and hasattr(unwrapped.waypoints, "targets"):
+            return unwrapped.waypoints.targets.copy()
+        # Older versions fallback
+        if hasattr(unwrapped, "targets"):
+            return unwrapped.targets.copy()
+    except Exception as e:
+        print(f"Warning: Could not extract waypoints ({e})")
+        
+    return []
+
+
+def plot_trajectory_3d(trajectory, waypoints=None, env_id="PyFlyt Env"):
+    """Plots the 3D trajectory of the drone."""
+    if not trajectory:
+        print("No trajectory data to plot.")
+        return
+
+    trajectory = np.array(trajectory)
+    xs, ys, zs = trajectory[:, 0], trajectory[:, 1], trajectory[:, 2]
+
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot the drone trajectory
+    ax.plot(xs, ys, zs, label='Drone Trajectory', color='blue', linewidth=2)
+    
+    # Mark start and end points
+    ax.scatter(xs[0], ys[0], zs[0], color='green', s=100, label='Start Position', marker='o')
+    ax.scatter(xs[-1], ys[-1], zs[-1], color='black', s=100, label='End Position', marker='X')
+
+    # Plot waypoints if available
+    if waypoints is not None and len(waypoints) > 0:
+        waypoints = np.array(waypoints)
+        wx, wy, wz = waypoints[:, 0], waypoints[:, 1], waypoints[:, 2]
+        ax.scatter(wx, wy, wz, color='red', s=100, label='Targets/Waypoints', marker='*')
+
+    ax.set_title(f"3D Flight Trajectory - {env_id}")
+    ax.set_xlabel('X Position')
+    ax.set_ylabel('Y Position')
+    ax.set_zlabel('Z Position')
+    
+    # Make axes limits equal to have a realistic aspect ratio
+    max_range = np.array([xs.max()-xs.min(), ys.max()-ys.min(), zs.max()-zs.min()]).max() / 2.0
+    mid_x = (xs.max()+xs.min()) * 0.5
+    mid_y = (ys.max()+ys.min()) * 0.5
+    mid_z = (zs.max()+zs.min()) * 0.5
+    ax.set_xlim(mid_x - max_range, mid_x + max_range)
+    ax.set_ylim(mid_y - max_range, mid_y + max_range)
+    ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
 def evaluate_model(model_path, env_id, n_episodes=20, flight_mode=0,
-                   render=False, deterministic=True, env_kwargs=None, vecnorm_path=None):
+                   render=False, deterministic=True, env_kwargs=None, 
+                   vecnorm_path=None, plot_3d=False):
     """Evaluate a trained model and return detailed statistics."""
     model = load_model(model_path)
 
     render_mode = "human" if render else None
     
-    # Wrap in a lambda function to be compatible with DummyVecEnv
     def _init():
         return make_env(env_id, flight_mode=flight_mode, render_mode=render_mode, env_kwargs=env_kwargs)
 
-    # 1. Wrap the environment in a Vectorized Env (required for VecNormalize)
     env = DummyVecEnv([_init])
 
-    # 2. Load the normalization statistics if provided
     if vecnorm_path:
         print(f"Loading VecNormalize stats from: {vecnorm_path}")
         env = VecNormalize.load(vecnorm_path, env)
-        # CRITICAL: Do not update stats during evaluation, and do not normalize rewards
         env.training = False
         env.norm_reward = False
 
     episode_rewards, episode_lengths, episode_crashes = [], [], []
     episode_waypoints = []
+    
+    # Storage for 3D plotting
+    first_episode_trajectory = []
+    first_episode_targets = []
 
     for i in range(n_episodes):
-        # Set the seed safely on the underlying gym environment
-        env.env_method("reset", seed=100 + i)
+        env.env_method("reset", seed=42 + 16 + i)
         obs = env.reset()
+        
+        # Get targets for the first episode if we want to plot them
+        if i == 0 and plot_3d:
+            first_episode_targets = get_waypoints(env)
+            # UPDATE THIS LINE: Add 'obs' to the arguments
+            first_episode_trajectory.append(get_drone_position(env, obs))
         
         total_reward, steps, crashed = 0.0, 0, False
 
         while True:
             action, _ = model.predict(obs, deterministic=deterministic)
-            # SB3 VecEnv step returns arrays instead of single values
             obs, rewards, dones, infos = env.step(action)
+            
+            if i == 0 and plot_3d:
+                first_episode_trajectory.append(get_drone_position(env, obs))
             
             total_reward += rewards[0]
             steps += 1
@@ -91,12 +178,10 @@ def evaluate_model(model_path, env_id, n_episodes=20, flight_mode=0,
                 env.render()
 
             if dones[0]:
-                # SB3 VecEnv automatically resets on done and stores the final info in 'terminal_info'
                 info = infos[0]
                 if "terminal_info" in info:
                     info = info["terminal_info"]
                     
-                # Crash detection fallback (PyFlyt terminal reward is <= -50 usually)
                 crashed = rewards[0] <= -50
 
                 episode_rewards.append(total_reward)
@@ -112,6 +197,11 @@ def evaluate_model(model_path, env_id, n_episodes=20, flight_mode=0,
                 break
 
     env.close()
+
+    # Generate the plot for the first episode if requested
+    if plot_3d and first_episode_trajectory:
+        print("\nRendering 3D Trajectory for Episode 1...")
+        plot_trajectory_3d(first_episode_trajectory, first_episode_targets, env_id)
 
     results = {
         "model_path": model_path,
@@ -159,11 +249,11 @@ def main():
     parser.add_argument("--flight_mode", type=int, default=0)
     parser.add_argument("--render", action="store_true")
     parser.add_argument("--output", type=str, default=None, help="Save results to JSON")
-    
-    # --- ADD THESE TWO LINES ---
     parser.add_argument("--dome_size", type=float, default=150.0)
     parser.add_argument("--num_targets", type=int, default=4)
-    # ---------------------------
+    
+    # --- ADDED FLAG FOR 3D PLOTTING ---
+    parser.add_argument("--plot_3d", action="store_true", help="Plot the 3D trajectory of the first episode")
     
     args = parser.parse_args()
 
@@ -174,15 +264,13 @@ def main():
 
     env_kwargs = get_env_kwargs(args.env)
     
-    # --- UPDATE THIS BLOCK ---
     if args.env == "waypoints":
         env_kwargs["flight_dome_size"] = args.dome_size
         env_kwargs["num_targets"] = args.num_targets
-    # -------------------------
 
     results = evaluate_model(
         args.model, env_map[args.env], args.n_episodes, args.flight_mode, args.render,
-        env_kwargs=env_kwargs, vecnorm_path=args.vecnorm
+        env_kwargs=env_kwargs, vecnorm_path=args.vecnorm, plot_3d=args.plot_3d
     )
     print_results(results)
 

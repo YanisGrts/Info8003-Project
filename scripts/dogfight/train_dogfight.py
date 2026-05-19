@@ -12,7 +12,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
 from wandb.integration.sb3 import WandbCallback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from dogfight_wrapper import DogfightSelfPlayEnv
+from dogfight.dogfight_wrapper import DogfightSelfPlayEnv
 
 
 def make_env(rank: int, opponent_policy=None, seed: int = 0):
